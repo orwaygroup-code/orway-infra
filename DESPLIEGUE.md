@@ -5,11 +5,29 @@
 > **Estado: primer despliegue (infra aún no probada en un VPS real).**
 
 Datos de este despliegue:
-- **VPS:** `2.57.91.91` (Hostinger, Ubuntu). Vacío, sin Docker.
-- **Dominio:** `orwaygroup.com`. El **apex** (orwaygroup.com + www) lo servirá
-  **Orway System** (reemplaza la landing anterior). DNS ya apunta al VPS.
-- **n8n:** `n8n.orwaygroup.com` (falta agregar el registro DNS).
+- **VPS (Hostinger, Ubuntu, Docker 29 preinstalado):** IP **real** del servidor =
+  **`2.24.217.100`** (eth0). ⚠️ `2.57.91.91` es un **edge/CDN de Hostinger**, NO el
+  VPS — el DNS debe apuntar a `2.24.217.100`.
+- **Dominio:** `orwaygroup.com`. El apex (+ www) sirve **Orway System**. DNS apex/www
+  y `n8n` → `2.24.217.100`.
 - **ACME (Let's Encrypt):** `ORWAYGROUP@gmail.com`.
+
+> ### ⚠️ Lecciones del primer deploy real (2026-06-27) — Hostinger
+> 1. **No uses `2.57.91.91` (CDN) en el DNS.** Pasa por el CDN de Hostinger
+>    (`Server: hcdn`) y rompe el challenge ACME (`tls: no application protocol`).
+>    La IP real del VPS sale con `ip -4 addr show scope global` (eth0). Apunta el
+>    DNS ahí.
+> 2. **Traefik debe ser `traefik:v3`** (no `v3.1`): Docker Engine 29 exige API
+>    >= 1.40 y v3.1 se queda en 1.24 (ignora `DOCKER_API_VERSION`). Ya está en el
+>    `docker-compose.yml`.
+> 3. **Challenge ACME = HTTP-01** (no TLS-ALPN). Ya está en el compose.
+> 4. **Cuidado con el rate-limit de Let's Encrypt:** 5 autorizaciones fallidas por
+>    hora por dominio. Si quemas el límite probando, espera ~1 h. (El `429` por
+>    rate-limit NO suma fallos; los fallos son del challenge.)
+> 5. Desplegamos los repos en **`/opt/orway-system`** y **`/opt/orway-infra`**
+>    (no en `~`). Ajusta las rutas de abajo si usas `/opt`.
+> 6. `orway-system` es **privado** → en el VPS se clona con una **deploy key SSH**
+>    de solo lectura (`ssh-keygen` + agregarla en GitHub → Settings → Deploy keys).
 
 ---
 
@@ -36,11 +54,11 @@ Datos de este despliegue:
 Traefik emite el TLS por challenge: el dominio debe resolver al VPS **antes** de
 arrancar el contenedor. Registros necesarios (todos → `2.57.91.91`):
 
-| Tipo | Nombre | Contenido | Estado |
-|------|--------|-----------|--------|
-| A | `@` | `2.57.91.91` | ✅ ya está |
-| CNAME | `www` | `orwaygroup.com` | ✅ ya está |
-| A | `n8n` | `2.57.91.91` | ⬜ **agregar** |
+| Tipo | Nombre | Contenido | Notas |
+|------|--------|-----------|-------|
+| A | `@` | `2.24.217.100` | IP **real** del VPS (NO el CDN `2.57.91.91`) |
+| CNAME | `www` | `orwaygroup.com` | sigue al apex |
+| A | `n8n` | `2.24.217.100` | para n8n |
 
 > Si no agregas `n8n` ahora, todo lo demás funciona; solo n8n quedará reintentando
 > su certificado hasta que el DNS exista.
@@ -181,8 +199,8 @@ Migraciones, RLS y usuarios iniciales, **dentro** del contenedor de Orway:
 APP=~/orway-infra/apps/orway
 docker compose -p orway --project-directory $APP exec app sh -c '
   npx prisma migrate deploy &&
-  npx prisma db execute --url "$DATABASE_URL" --file prisma/sql/rls.sql &&
-  npx prisma db execute --url "$DATABASE_URL" --file prisma/sql/notifications.sql &&
+  npx prisma db execute --file prisma/sql/rls.sql &&
+  npx prisma db execute --file prisma/sql/notifications.sql &&
   npm run db:seed
 '
 ```
