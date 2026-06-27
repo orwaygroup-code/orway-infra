@@ -13,7 +13,9 @@ volumes:
 
 services:
   traefik:
-    image: traefik:v3.1
+    # v3 (última 3.x): su cliente Docker negocia la API; v3.1 quedaba pegado en
+    # 1.24 y el Docker Engine 29+ del VPS exige >= 1.40.
+    image: traefik:v3
     restart: unless-stopped
     environment:
       # Docker Engine 29+ exige API >= 1.40; Traefik por defecto pide la 1.24 y el
