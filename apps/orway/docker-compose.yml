@@ -1,0 +1,31 @@
+# Orway System — UNA instancia en el VPS compartido.
+# Usa la imagen `orway-system:latest`, construida desde el repo de Orway:
+#   cd ~/orway-system && docker build -t orway-system:latest .
+# Levantar (desde esta carpeta, con su .env al lado):
+#   docker compose -p orway up -d
+#
+# A diferencia de Ayalas (un usuario por BD), Orway usa DOS roles (RLS): el .env
+# trae DATABASE_URL (owner, migraciones) y DATABASE_URL_APP (orway_app, runtime).
+
+networks:
+  web:
+    external: true
+
+volumes:
+  orway_storage:
+
+services:
+  app:
+    image: orway-system:latest
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      # Orway Cloud: binarios en disco. STORAGE_DIR=/data/storage en el .env.
+      - orway_storage:/data/storage
+    networks: [web]
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.orway.rule=Host(`${DOMAIN}`) || Host(`www.${DOMAIN}`)
+      - traefik.http.routers.orway.entrypoints=websecure
+      - traefik.http.routers.orway.tls.certresolver=le
+      - traefik.http.services.orway.loadbalancer.server.port=3000
