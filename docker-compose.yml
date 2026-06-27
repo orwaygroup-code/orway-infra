@@ -30,8 +30,12 @@ services:
       # redirige todo http -> https
       - --entrypoints.web.http.redirections.entrypoint.to=websecure
       - --entrypoints.web.http.redirections.entrypoint.scheme=https
-      # TLS automático con Let's Encrypt (TLS-ALPN-01)
-      - --certificatesresolvers.le.acme.tlschallenge=true
+      # TLS automático con Let's Encrypt (HTTP-01 por el puerto 80; más robusto que
+      # TLS-ALPN en este VPS, donde el challenge ALPN fallaba con "no application
+      # protocol"). Traefik sirve /.well-known/acme-challenge con prioridad sobre
+      # el redirect http->https.
+      - --certificatesresolvers.le.acme.httpchallenge=true
+      - --certificatesresolvers.le.acme.httpchallenge.entrypoint=web
       - --certificatesresolvers.le.acme.email=${ACME_EMAIL}
       - --certificatesresolvers.le.acme.storage=/acme/acme.json
     ports:
