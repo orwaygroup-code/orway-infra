@@ -1,0 +1,24 @@
+# Template de UNA instancia de Ayalas (un cliente).
+# Se usa con un .env por cliente (ver .env.example). Lo más práctico es generar
+# una carpeta por cliente con scripts/new-ayalas-client.sh y correr aquí:
+#   docker compose --env-file <cliente>.env -p ayalas-<cliente> up -d
+#
+# Requiere que exista la imagen `ayalas:latest` (construida desde el repo de Ayalas;
+# ese repo necesita un Dockerfile de Next.js standalone).
+
+networks:
+  web:
+    external: true
+
+services:
+  app:
+    image: ayalas:latest
+    restart: unless-stopped
+    env_file: .env
+    networks: [web]
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.${CLIENT}.rule=Host(`${DOMAIN}`)
+      - traefik.http.routers.${CLIENT}.entrypoints=websecure
+      - traefik.http.routers.${CLIENT}.tls.certresolver=le
+      - traefik.http.services.${CLIENT}.loadbalancer.server.port=3001

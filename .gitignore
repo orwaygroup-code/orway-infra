@@ -1,0 +1,13 @@
+# Secretos — NUNCA commitear
+.env
+**/.env
+*.env.local
+
+# TLS de Traefik
+acme/
+acme.json
+
+# Datos locales si se montan como bind
+data/
+backups/*.sql
+backups/*.gz
