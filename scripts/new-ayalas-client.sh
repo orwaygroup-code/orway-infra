@@ -21,7 +21,7 @@ DBPASS="$(openssl rand -hex 16)"
 
 echo "▶ Creando BD '$DB' y usuario '$DBUSER'…"
 docker compose -f "$ROOT/docker-compose.yml" exec -T postgres \
-  psql -U "$POSTGRES_USER" -v ON_ERROR_STOP=1 <<SQL
+  psql -U "$POSTGRES_USER" -d postgres -v ON_ERROR_STOP=1 <<SQL
 CREATE USER "$DBUSER" WITH PASSWORD '$DBPASS';
 CREATE DATABASE "$DB" OWNER "$DBUSER";
 SQL
