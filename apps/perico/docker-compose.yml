@@ -1,0 +1,83 @@
+# El Perico — POS de lonchería (Jesús María, Ags.).
+#
+# Instancia ÚNICA (single-tenant). No confundir con Ayalas, que es una imagen
+# compartida con N instancias por cliente: aquí hay un solo negocio.
+#
+#   docker compose -p perico-pos --project-directory . up -d
+#
+# Requiere la imagen `perico-pos:latest`, construida desde el repo perico-pos.
+#
+# Convenciones de aislamiento (ver README.md de esta carpeta):
+#   - Nombre de proyecto: perico-pos   (prefija contenedores y volúmenes)
+#   - Router de Traefik:  perico-pos   (namespaced: un cliente de Ayalas
+#                                       llamado "perico" NO colisiona)
+#   - Base de datos:      perico_db, con DOS roles (owner + app)
+#   - Puerto interno:     3002 por convención de la casa. No hay colisión real
+#                         con 3000/3001 —son puertos de contenedor, aislados—
+#                         pero se respeta la numeración para que el modelo
+#                         mental de los docs siga siendo cierto.
+
+networks:
+  web:
+    external: true
+
+services:
+  app:
+    image: perico-pos:latest
+    restart: unless-stopped
+    env_file: .env
+    networks: [web]
+
+    # --- Contención en VPS compartido -------------------------------------
+    # Este es un POS: si otro proyecto se desboca, aquí se siente como fila
+    # detenida en hora pico. Los límites cortan por ambos lados.
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 768M
+        reservations:
+          memory: 256M
+
+    # Los logs de un contenedor sin rotar pueden llenar el disco del VPS y
+    # tumbar a TODOS los proyectos. 3 archivos de 10 MB es suficiente para
+    # diagnosticar un servicio.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    security_opt:
+      - no-new-privileges:true
+
+    tmpfs:
+      - /tmp:size=64m
+
+    # Traefik enruta a contenedores vivos; sin healthcheck manda tráfico a una
+    # app que todavía está arrancando y el cajero ve un 502.
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3002/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.perico-pos.rule=Host(`${DOMAIN}`)
+      - traefik.http.routers.perico-pos.entrypoints=websecure
+      - traefik.http.routers.perico-pos.tls.certresolver=le
+      - traefik.http.services.perico-pos.loadbalancer.server.port=3002
+
+      # El PrintBridge del local golpea /api/print-jobs/* cada 3 segundos desde
+      # una IP doméstica. Se le da su propio middleware de rate limit para que
+      # un puente en bucle no consuma la app entera, y para que un escaneo
+      # externo contra ese endpoint no pase de ahí.
+      - traefik.http.middlewares.perico-print-rl.ratelimit.average=40
+      - traefik.http.middlewares.perico-print-rl.ratelimit.burst=80
+      - traefik.http.routers.perico-print.rule=Host(`${DOMAIN}`) && PathPrefix(`/api/print-jobs`)
+      - traefik.http.routers.perico-print.entrypoints=websecure
+      - traefik.http.routers.perico-print.tls.certresolver=le
+      - traefik.http.routers.perico-print.middlewares=perico-print-rl
+      - traefik.http.routers.perico-print.service=perico-pos
