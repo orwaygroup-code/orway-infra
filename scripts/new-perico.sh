@@ -48,6 +48,32 @@ fi
 OWNER_PASS="$(openssl rand -hex 24)"
 APP_PASS="$(openssl rand -hex 24)"
 
+# PIN de 4 digitos que el seed NO vaya a rechazar.
+#
+# El seed rechaza en produccion los PIN debiles: digitos repetidos, secuencias
+# ascendentes o descendentes, y los sospechosos de siempre. `shuf` a secas puede
+# sacar 1111 o 1234, y entonces el aprovisionamiento truena en el paso del seed
+# —ya con la base creada y este script marcado como no idempotente—. Es raro
+# (una de cada ~300) y por eso es peor: falla el dia que menos se espera, en
+# casa del cliente.
+pin_fuerte() {
+  local pin
+  while :; do
+    pin="$(shuf -i 1000-9999 -n 1)"
+    case "$pin" in
+      0000|1111|2222|3333|4444|5555|6666|7777|8888|9999) continue ;;
+      1234|2345|3456|4567|5678|6789|0123) continue ;;
+      9876|8765|7654|6543|5432|4321|3210) continue ;;
+      1212|2580|1004) continue ;;
+    esac
+    echo "$pin"
+    return
+  done
+}
+
+OWNER_PIN="$(pin_fuerte)"
+ORWAY_PIN="$(pin_fuerte)"
+
 echo "▶ Creando base '$DB' con roles '$OWNER' (dueño) y '$APPUSER' (runtime)…"
 compose_pg psql -U "$POSTGRES_USER" -d postgres -v ON_ERROR_STOP=1 <<SQL
 CREATE ROLE "$OWNER"   LOGIN PASSWORD '$OWNER_PASS';
@@ -88,9 +114,9 @@ PRINT_BRIDGE_KEY=$(openssl rand -hex 32)
 TZ=America/Mexico_City
 BUSINESS_NAME=El Perico
 SEED_OWNER_NAME=Dueno
-SEED_OWNER_PIN=$(shuf -i 1000-9999 -n 1)
+SEED_OWNER_PIN=$OWNER_PIN
 SEED_ORWAY_NAME=Orway
-SEED_ORWAY_PIN=$(shuf -i 1000-9999 -n 1)
+SEED_ORWAY_PIN=$ORWAY_PIN
 ENV
 chmod 600 "$DIR/.env"
 
