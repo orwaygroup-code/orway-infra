@@ -27,6 +27,13 @@ compose_pg() {
   docker compose -f "$ROOT/docker-compose.yml" exec -T postgres "$@"
 }
 
+# El id del contenedor de Postgres, para `docker cp`. Se resuelve una vez.
+CONTENEDOR="$(docker compose -f "$ROOT/docker-compose.yml" ps -q postgres)"
+if [ -z "$CONTENEDOR" ]; then
+  echo "✗ El contenedor de Postgres no esta corriendo." >&2
+  exit 1
+fi
+
 # Las bases reales, sin las plantillas de Postgres.
 BASES="$(compose_pg psql -U "$POSTGRES_USER" -d postgres -tAc \
   "SELECT datname FROM pg_database WHERE datistemplate = false AND datname <> 'postgres'")"
@@ -40,22 +47,56 @@ FALLOS=0
 
 for DB in $BASES; do
   ARCHIVO="$DIR/${DB}-${SELLO}.dump"
+  TMP="/tmp/${DB}-${SELLO}.dump"   # dentro del contenedor
   echo "▶ $DB"
 
-  # Formato custom (-Fc): comprimido y restaurable por tabla con pg_restore.
-  if ! compose_pg pg_dump -U "$POSTGRES_USER" -Fc "$DB" > "$ARCHIVO"; then
+  # El volcado se escribe DENTRO del contenedor, no por tuberia.
+  #
+  # La primera version mandaba el volcado por stdout y lo verificaba con
+  # `pg_restore --list /dev/stdin`. No funciona: un archivo en formato custom
+  # se recorre hacia atras para leer su indice, y una tuberia no se puede
+  # rebobinar. El efecto era el peor posible — descartaba respaldos BUENOS y
+  # reportaba fallo. Un respaldo que miente sobre si mismo es peor que no
+  # tenerlo, porque nadie va a buscar el problema hasta que haga falta.
+  if ! compose_pg pg_dump -U "$POSTGRES_USER" -Fc -f "$TMP" "$DB"; then
     echo "  ✗ fallo el volcado de $DB" >&2
-    rm -f "$ARCHIVO"
+    compose_pg rm -f "$TMP" 2>/dev/null || true
     FALLOS=$((FALLOS + 1))
     continue
   fi
 
   # VERIFICACION, no opcional. Un pg_dump puede terminar en 0 y dejar un
   # archivo truncado si se acaba el disco a media escritura. `pg_restore -l`
-  # lee el indice del volcado: si no lo puede listar, el respaldo no sirve y
-  # es mejor saberlo hoy que el dia que haya que restaurarlo.
-  if ! compose_pg pg_restore --list /dev/stdin < "$ARCHIVO" > /dev/null 2>&1; then
+  # lee el indice: si no lo puede listar, el respaldo no sirve, y es mejor
+  # saberlo hoy que el dia que haya que restaurarlo. Ahora corre contra un
+  # archivo real, que si se puede recorrer.
+  if ! compose_pg pg_restore --list "$TMP" > /dev/null 2>&1; then
     echo "  ✗ el volcado de $DB no se puede leer: se descarta" >&2
+    compose_pg rm -f "$TMP" 2>/dev/null || true
+    FALLOS=$((FALLOS + 1))
+    continue
+  fi
+
+  # Sale del contenedor con `docker cp`, no con `cat` por la tuberia de exec.
+  # Un volcado es binario, y sacarlo por stdout depende de que nada en el
+  # camino lo toque. `docker cp` esta hecho justamente para mover archivos.
+  TAMANO_DENTRO="$(compose_pg stat -c %s "$TMP" | tr -d '')"
+
+  if ! docker cp "$CONTENEDOR:$TMP" "$ARCHIVO" > /dev/null; then
+    echo "  ✗ no se pudo sacar el volcado de $DB del contenedor" >&2
+    rm -f "$ARCHIVO"
+    compose_pg rm -f "$TMP" 2>/dev/null || true
+    FALLOS=$((FALLOS + 1))
+    continue
+  fi
+  compose_pg rm -f "$TMP" 2>/dev/null || true
+
+  # Y que lo que llego al disco pese EXACTAMENTE lo que se verifico. Un byte
+  # de diferencia significa que el archivo que guardamos no es el que pasó la
+  # prueba, y entonces la prueba no vale.
+  TAMANO_FUERA="$(stat -c %s "$ARCHIVO" 2>/dev/null || echo 0)"
+  if [ "$TAMANO_DENTRO" != "$TAMANO_FUERA" ]; then
+    echo "  ✗ $DB llego incompleto: $TAMANO_FUERA de $TAMANO_DENTRO bytes" >&2
     rm -f "$ARCHIVO"
     FALLOS=$((FALLOS + 1))
     continue
