@@ -97,6 +97,32 @@ tomadas de su carta impresa—. No son datos demo: es su catálogo.
 Los PIN iniciales quedan en `.env`. **Se entregan en persona y se rotan en la
 primera sesión.** No salen por chat.
 
+## Actualizar
+
+```bash
+cd /opt/perico-pos && ./scripts/deploy.sh
+```
+
+Hace: `git pull` (main) → **respaldo** → `docker build` → `up -d` → migraciones →
+verifica que la app respondio. **No** corre el seed: es de una sola vez.
+
+Se diferencia del `deploy.sh` de Orway System en cuatro cosas, todas por lo mismo —
+aqui se maneja dinero:
+
+- **Respalda antes de migrar.** Una migracion que sale mal sobre cortes de caja no se
+  deshace sin respaldo previo.
+- **Avisa si hay un turno de caja abierto** y pide confirmacion escrita. Desplegar
+  reinicia el contenedor: no se pierde ninguna venta, pero si lo que el cajero tuviera a
+  medio capturar.
+- **Etiqueta la imagen con el commit**, no solo `latest`. Sin eso no hay a que volver.
+- **Verifica que respondio** en vez de suponerlo, y si no, imprime como revertir.
+
+Banderas: `--sin-respaldo` (solo si ya respaldaste a mano) y `--forzar` (no preguntar
+con turno abierto).
+
+**Revertir la imagen NO revierte la migracion.** Si el problema fue la migracion, el
+respaldo del paso 2 esta en `/var/backups/orway`.
+
 ## Relacionado
 
 - `../../vps-infra.md` · `../../DESPLIEGUE.md`
