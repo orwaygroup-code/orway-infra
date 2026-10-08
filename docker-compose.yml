@@ -1,4 +1,9 @@
 # Infra compartida del VPS de Orway: Traefik + Postgres + n8n.
+#
+# LÍMITES DE MEMORIA: el VPS tiene 7.8 GB y **swap 0**. Sin límite, un servicio que se
+# desboca no desacelera: el kernel elige una víctima y la mata, y puede ser el POS de un
+# restaurante en servicio. Los valores son ~2x lo medido con `docker stats` el 7 oct 2026.
+# ROTACIÓN DE LOGS: tres meses sin rotar llenan el disco, y el disco lleno tumba a todos.
 # Levantar: cp .env.example .env && (rellenar) && docker compose up -d
 # Las apps (Ayalas, Orway, etc.) viven en apps/* y se unen a la red `web`.
 
@@ -46,6 +51,17 @@ services:
       - traefik_acme:/acme
     networks: [web]
 
+    # Contención (ver «Límites de memoria» en vps-infra.md). Medía 32 MB.
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   postgres:
     image: postgres:16
     restart: unless-stopped
@@ -58,6 +74,19 @@ services:
     networks: [web]
     # Sin `ports:` a propósito — Postgres NO se expone a internet.
     # Las apps lo alcanzan por la red interna con host `postgres`.
+
+    # Contención (ver «Límites de memoria» en vps-infra.md). Medía 102 MB, pero crece ~7 MB por conexión: con una instancia de ORest
+    # por restaurante son 5 conexiones cada uno. Va HOLGADO a propósito: es la dependencia
+    # compartida de todas las apps, y si a Postgres lo mata el OOM, se caen todas.
+    deploy:
+      resources:
+        limits:
+          memory: 1536M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   n8n:
     image: n8nio/n8n:latest
@@ -78,3 +107,15 @@ services:
       - traefik.http.routers.n8n.entrypoints=websecure
       - traefik.http.routers.n8n.tls.certresolver=le
       - traefik.http.services.n8n.loadbalancer.server.port=5678
+
+    # Contención (ver «Límites de memoria» en vps-infra.md). Medía 347 MB.
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+

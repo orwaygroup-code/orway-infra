@@ -63,3 +63,72 @@ VPS (Docker host)
 - **Arquitectura: decidida** (Docker + Traefik, Postgres y n8n compartidos, app por cliente).
 - **Configs:** este repo trae el scaffold (`docker-compose.yml`, template de app, script).
   **Aún no probados en un VPS real**; se validan en el primer deploy.
+
+---
+
+## Límites de memoria y swap (7 oct 2026)
+
+**El VPS tiene 2 vCPU, 7.8 GB y `swap 0`.** Sin swap, un servicio que se pasa de memoria no
+desacelera: el kernel elige una víctima y la mata. Puede ser el POS de un restaurante en
+servicio. Hasta hoy **solo `perico-pos` tenía límite**; los demás podían comerse la caja entera.
+
+### Medición que sostiene los números (`docker stats`, 7 oct 2026)
+
+| Contenedor | Medido | Límite |
+|---|---|---|
+| orway-app | 536 MB | 1 GB |
+| n8n | 347 MB | 768 MB |
+| perico-pos | 249 MB | 768 MB *(ya lo tenía)* |
+| ayalas-app | 147 MB | 512 MB |
+| postgres | 102 MB | **1.5 GB** |
+| traefik | 32 MB | 256 MB |
+| coturn | 11 MB | — *(no está en este repo, ver abajo)* |
+
+Los límites son ~2× lo medido. **Postgres va holgado a propósito**: crece ~7 MB por conexión
+y es la dependencia compartida de todas las apps — si a Postgres lo mata el OOM, se caen todas.
+
+### Swap: 4 GB
+
+No es para rendimiento. Es para que un pico **degrade en vez de matar**.
+
+```bash
+fallocate -l 4G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
+```
+
+```bash
+echo '/swapfile none swap sw 0 0' >> /etc/fstab
+```
+
+```bash
+sysctl -w vm.swappiness=10 && echo 'vm.swappiness=10' >> /etc/sysctl.d/99-swap.conf
+```
+
+`swappiness=10`: que use swap solo bajo presión real, no por costumbre.
+
+### APLICAR LOS LÍMITES NO ES SIN CORTE
+
+Poner un límite **recrea el contenedor**. Reiniciar `postgres` tira la conexión de **todas** las
+apps a la vez. Se hace **fuera de horario de servicio** (de madrugada, o lunes).
+
+Orden: primero el swap (no requiere reiniciar nada), después los contenedores — las apps antes
+que Postgres, y Postgres al final.
+
+### Techo de capacidad para ORest
+
+Cada instancia de ORest cuesta ~300 MB (Perico, su equivalente, mide 249 en reposo) más ~35 MB
+de Postgres por sus 5 conexiones: **~335 MB por restaurante**.
+
+| Escenario | Clientes de ORest |
+|---|---|
+| Construyendo la imagen **en el VPS** (como hoy) | **6** |
+| Construyendo fuera y subiendo la imagen | **12** |
+| Más allá | topan las conexiones de Postgres: 16 |
+
+`next build` pide 2–4 GB. **Con swap 0 y 6 restaurantes operando, un despliegue en hora de
+comida puede matar un POS.** Sacar la construcción del VPS deja de ser opcional en el cliente 5.
+
+### Deriva conocida
+
+**`coturn` corre en el VPS y NO está en este repo.** Lleva semanas arriba y es lo único que
+consume CPU (3.6%). Si el VPS se reconstruyera desde aquí, no volvería, y nadie puede saber para
+qué es. Hay que meterlo a este repo o quitarlo del VPS.

@@ -23,6 +23,18 @@ services:
       # Orway Cloud: binarios en disco. STORAGE_DIR=/data/storage en el .env.
       - orway_storage:/data/storage
     networks: [web]
+
+    # Contención en VPS compartido (7.8 GB, swap 0). Medía 536 MB (docker stats, 7 oct 2026).
+    # Sin límite, un servicio desbocado hace que el kernel mate a otro.
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     labels:
       - traefik.enable=true
       - traefik.http.routers.orway.rule=Host(`${DOMAIN}`) || Host(`www.${DOMAIN}`)
