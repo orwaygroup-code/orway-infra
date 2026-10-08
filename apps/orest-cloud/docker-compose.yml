@@ -1,0 +1,52 @@
+# ORest Cloud — el AGENTE (ola C-2, orest-cloud/docs/agente.md). Uno solo, para todo el VPS.
+#
+#   docker compose --env-file apps/orest-cloud/.env -p orest-cloud-agent -f apps/orest-cloud/docker-compose.yml up -d
+#
+# Es la mitad privilegiada: monta el socket de Docker (equivale a root del host) para crear, detener y
+# actualizar las instancias de ORest. Por eso:
+#   - SIN `ports:` y SIN labels de Traefik. Está en la red `web` solo para llegar a Postgres (es la
+#     única red; Postgres no publica puertos). Traefik tiene `exposedbydefault=false`: no lo enruta.
+#   - Se conecta al registro con `orest_cloud_agent` (sin DELETE, sin TRUNCATE, sin ser dueño) y al
+#     clúster con `orest_provisioner` (CREATEDB, CREATEROLE, sin superusuario):
+#     scripts/orest-cloud-roles.sql. Ojo: con el socket podría hacer `docker exec postgres psql` como
+#     superusuario; los roles frenan errores del agente, no a un agente comprometido.
+#   - UN solo agente: lo hace cumplir un candado de Postgres (un segundo no arranca). `restart` no
+#     produce dos: compose detiene el viejo antes de levantar el nuevo.
+#   - `stop_grace_period` largo: al recibir SIGTERM termina el Job en curso (no corta un provision a
+#     la mitad). Si aun así muere, el siguiente arranque lo declara abandonado y reconcilia el host.
+#
+# .env (chmod 600, no se commitea):
+#   AGENT_TAG=2026.10.08
+#   AGENT_DATABASE_URL=postgresql://orest_cloud_agent:…@postgres:5432/orest_cloud
+#   PROVISIONER_URL=postgresql://orest_provisioner:…@postgres:5432/postgres
+#   INFRA_DIR=/opt/orway-infra          (la ruta REAL de este repo en el VPS)
+#   BACKUP_DIR=/var/backups/orway/orest
+
+networks:
+  web:
+    external: true
+
+services:
+  agent:
+    image: orest-cloud-agent:${AGENT_TAG:?falta AGENT_TAG}
+    restart: unless-stopped
+    networks: [web]
+    environment:
+      AGENT_DATABASE_URL: ${AGENT_DATABASE_URL:?falta AGENT_DATABASE_URL}
+      PROVISIONER_URL: ${PROVISIONER_URL:?falta PROVISIONER_URL}
+      INFRA_DIR: ${INFRA_DIR:?falta INFRA_DIR}
+      BACKUP_DIR: ${BACKUP_DIR:?falta BACKUP_DIR}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      # MISMA ruta dentro y fuera: compose manda al daemon rutas del HOST (el .env y el
+      # docker-compose.yml de cada cliente), y el agente las escribe desde adentro.
+      - ${INFRA_DIR}:${INFRA_DIR}
+      - ${BACKUP_DIR}:${BACKUP_DIR}
+    stop_grace_period: 15m
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

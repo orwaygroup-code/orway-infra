@@ -132,3 +132,24 @@ comida puede matar un POS.** Sacar la construcción del VPS deja de ser opcional
 **`coturn` corre en el VPS y NO está en este repo.** Lleva semanas arriba y es lo único que
 consume CPU (3.6%). Si el VPS se reconstruyera desde aquí, no volvería, y nadie puede saber para
 qué es. Hay que meterlo a este repo o quitarlo del VPS.
+
+---
+
+## ORest Cloud: el agente (ola C-2, 8 oct 2026; detalle en `orest-cloud/docs/agente.md`)
+
+Cambia tres cosas de esta infra. **Ninguna está probada en el VPS todavía**: el ensayo con un cliente
+desechable está en `orest-cloud/docs/agente.md` §9.
+
+1. **Un contenedor privilegiado, `orest-cloud-agent`** (`apps/orest-cloud/docker-compose.yml`). Monta
+   `/var/run/docker.sock`, lo que equivale a root del host, para crear, detener y actualizar instancias
+   de ORest. Corre sin `ports:`, sin labels de Traefik (`exposedbydefault=false`) y sin HTTP. Está en
+   `web` solo para llegar a Postgres. Monta `orway-infra` en la MISMA ruta que en el host. Es uno solo:
+   lo hace cumplir un candado de Postgres.
+2. **Roles de Postgres para Cloud** (`scripts/orest-cloud-roles.sql`, una vez; `scripts/orest-cloud-grants.sql`,
+   después de cada migración de Cloud): dueño, web, agente y `orest_provisioner`, este último con
+   `CREATEDB CREATEROLE` y **sin superusuario**. Ninguno con `DELETE` ni `TRUNCATE` en el registro.
+3. **Una etiqueta de imagen por cliente de ORest.** `apps/orest/docker-compose.yml` usa
+   `orest:${IMAGE_TAG:-latest}`, y `IMAGE_TAG` va en el `.env` de cada cliente. Sin `IMAGE_TAG` cae a
+   `latest`: el alta manual de `scripts/new-orest-client.sh` sigue igual.
+
+`apps/orest/clients/` (`.env` con secretos y sus copias apartadas) queda fuera de git (`.gitignore`).

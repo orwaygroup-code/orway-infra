@@ -1,12 +1,13 @@
-# ORest — UNA instancia (un restaurante). Imagen COMPARTIDA `orest:latest`.
+# ORest — UNA instancia (un restaurante). Cada cliente fija SU etiqueta de imagen: `IMAGE_TAG` en su
+# .env (orest-cloud/docs/agente.md §5). Sin IMAGE_TAG cae a `latest`, como antes (el alta manual).
 #
 # Patrón de Ayalas, no el de Perico: una imagen y N instancias, una por cliente.
 # Perico es instancia única; ORest es el producto extraído del que habla su README.
 #
 #   docker compose --env-file <cliente>.env -p orest-<cliente> up -d
 #
-# Requiere la imagen `orest:latest`, construida desde el repo ORest:
-#   cd ~/orest && docker build -t orest:latest .
+# Requiere la imagen `orest:<IMAGE_TAG>`, construida en LOCAL desde el repo ORest y subida al VPS:
+#   docker build -t orest:2026.10.08 .
 #
 # Asignación (convención de la casa):
 #   Proyecto Compose : orest-<cliente>     prefija contenedores y volúmenes
@@ -28,7 +29,7 @@ networks:
 
 services:
   app:
-    image: orest:latest
+    image: orest:${IMAGE_TAG:-latest}
     restart: unless-stopped
     env_file: .env
     networks: [web]

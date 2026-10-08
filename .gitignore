@@ -11,3 +11,10 @@ acme.json
 data/
 backups/*.sql
 backups/*.gz
+
+# Estado de los clientes de ORest en el host (lo escriben el script de alta y el agente de ORest
+# Cloud): .env con secretos, sus copias apartadas (.env.apartado-<fecha>) y los temporales de la
+# escritura atómica (.env.tmp-…). `**/.env` solo tapa el nombre exacto.
+apps/orest/clients/
+**/.env.*
+!**/.env.example
