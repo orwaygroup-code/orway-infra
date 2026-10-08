@@ -1,0 +1,78 @@
+# ORest — UNA instancia (un restaurante). Imagen COMPARTIDA `orest:latest`.
+#
+# Patrón de Ayalas, no el de Perico: una imagen y N instancias, una por cliente.
+# Perico es instancia única; ORest es el producto extraído del que habla su README.
+#
+#   docker compose --env-file <cliente>.env -p orest-<cliente> up -d
+#
+# Requiere la imagen `orest:latest`, construida desde el repo ORest:
+#   cd ~/orest && docker build -t orest:latest .
+#
+# Asignación (convención de la casa):
+#   Proyecto Compose : orest-<cliente>     prefija contenedores y volúmenes
+#   Router de Traefik: orest-<cliente>     con nombre completo: un cliente de
+#                                          Ayalas llamado igual NO colisiona
+#   Puerto interno   : 3003                (3000 Orway, 3001 Ayalas, 3002 Perico)
+#   Base de datos    : orest_<cliente>_db  propia, cerrada a PUBLIC
+#
+# MIGRACIONES, NO db:push. ORest las lleva desde el commit uno (docs/producto.md,
+# decisión 2) y su SQL escrito a mano no se regenera. Después de `up -d`:
+#   docker compose -p orest-<cliente> exec app npx prisma migrate deploy
+#
+# El primer usuario NO sale del .env: lo crea el asistente de primer uso en
+# https://<dominio>/primer-uso con el SETUP_CODE. Ver lib/setupStore.ts.
+
+networks:
+  web:
+    external: true
+
+services:
+  app:
+    image: orest:latest
+    restart: unless-stopped
+    env_file: .env
+    networks: [web]
+
+    # Contención en VPS compartido (2 vCPU, 7.8 GB, swap 0 — ver vps-infra.md).
+    # Una instancia de ORest mide ~250 MB en reposo (medido en perico-pos, mismo
+    # stack). El límite va a ~3x para absorber una hora pico sin matar al vecino.
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 768M
+        reservations:
+          memory: 256M
+
+    # Logs sin rotar llenan el disco, y el disco lleno tumba a TODOS los proyectos.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    security_opt:
+      - no-new-privileges:true
+
+    tmpfs:
+      - /tmp:size=64m
+
+    # Traefik enruta a contenedores vivos; sin healthcheck manda tráfico a una app
+    # que todavía arranca y el mesero ve un 502. `node:22-slim` NO trae curl ni
+    # wget: el chequeo se hace con el propio Node.
+    # /api/health NO toca la base a propósito: todas las instancias comparten el
+    # Postgres del VPS, así que una salud que dependiera de él sacaría de rotación
+    # a TODOS los restaurantes a la vez (docs/despliegue.md §1 del repo ORest).
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3003/api/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.orest-${CLIENT}.rule=Host(`${DOMAIN}`)
+      - traefik.http.routers.orest-${CLIENT}.entrypoints=websecure
+      - traefik.http.routers.orest-${CLIENT}.tls.certresolver=le
+      - traefik.http.services.orest-${CLIENT}.loadbalancer.server.port=3003
