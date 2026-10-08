@@ -52,7 +52,8 @@ Datos de este despliegue:
 ## Parte B — DNS (antes de levantar nada)
 
 Traefik emite el TLS por challenge: el dominio debe resolver al VPS **antes** de
-arrancar el contenedor. Registros necesarios (todos → `2.57.91.91`):
+arrancar el contenedor. Registros necesarios (todos → **`2.24.217.100`**, la IP REAL del
+VPS — ver la lección 1 de arriba: `2.57.91.91` es el CDN y rompe el challenge ACME):
 
 | Tipo | Nombre | Contenido | Notas |
 |------|--------|-----------|-------|
@@ -63,6 +64,23 @@ arrancar el contenedor. Registros necesarios (todos → `2.57.91.91`):
 > Si no agregas `n8n` ahora, todo lo demás funciona; solo n8n quedará reintentando
 > su certificado hasta que el DNS exista.
 
+### Dominios de producto con instancia por cliente (ORest)
+
+Un producto con una instancia por cliente —ORest hoy, en `orest.com.mx`— no necesita un
+registro por restaurante. Un **comodín** basta y es lo que mantiene el alta automática:
+
+| Tipo | Nombre | Contenido | Notas |
+|------|--------|-----------|-------|
+| A | `*` | `2.24.217.100` | cubre `<cliente>.orest.com.mx`, sin tocar DNS al dar de alta |
+
+El comodín en DNS **no** obliga a un certificado comodín: Traefik pide uno por nombre con
+HTTP-01 cuando llega la primera petición. El ápice se deja fuera a propósito mientras no haya
+una landing que servir; si se apunta al VPS sin router, quien entre ve un 404 de Traefik.
+
+**Y la lección 1 aplica igual aquí**, que es donde se volvió a tropezar el 8 de octubre: el
+comodín se creó apuntando a `2.57.91.91` —el CDN— y nada conectaba, con las etiquetas de
+Traefik y el contenedor perfectamente bien.
+
 ---
 
 ## Parte C — Bootstrap del VPS (una sola vez)
@@ -70,7 +88,7 @@ arrancar el contenedor. Registros necesarios (todos → `2.57.91.91`):
 Entra por SSH como root (o con sudo) y prepara el servidor.
 
 ```bash
-ssh root@2.57.91.91
+ssh root@2.24.217.100
 
 # 1. Actualizar el sistema
 apt update && apt -y upgrade
