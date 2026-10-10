@@ -113,6 +113,20 @@ usermod -aG docker paul
 
 A partir de aquí, trabaja como tu usuario (`su - paul`), no como root.
 
+> **Para que esa frase se pueda cumplir** (10 oct 2026): el `.env` de la infra estaba en
+> `-rw------- root root`, así que un usuario de despliegue no podía correr `docker compose` en
+> `/opt/orway-infra` —compose necesita leerlo para sustituir variables— y todo terminaba haciéndose como
+> root. Ahora es **`root:paul`, `640`**.
+>
+> No baja la seguridad real: **el grupo `docker` ya es equivalente a root** (un contenedor con `-v /:/host`
+> lee cualquier archivo del disco), así que el `600` frenaba un `cat` y no a nadie decidido. Lo que sí
+> hay que cuidar es que el grupo `paul` siga siendo de una sola persona: agregar a alguien ahí le da el
+> Postgres de todas las apps.
+>
+> Y por lo mismo: **cada persona con cuenta en el VPS y en el grupo `docker` es root de hecho.** Hoy son
+> `paul` y `cris`. Antes de vender la primera instancia de ORest a un tercero, eso es una decisión que
+> hay que tomar a propósito, no heredar.
+
 ---
 
 ## Parte D — Infra compartida: Traefik + Postgres + n8n (una sola vez)
