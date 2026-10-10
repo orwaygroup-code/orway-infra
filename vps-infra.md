@@ -201,3 +201,27 @@ desechable está en `orest-cloud/docs/agente.md` §9.
    `latest`: el alta manual de `scripts/new-orest-client.sh` sigue igual.
 
 `apps/orest/clients/` (`.env` con secretos y sus copias apartadas) queda fuera de git (`.gitignore`).
+
+## ORest Cloud: la mitad web (ola C-2c, 10 oct 2026; detalle en `orest-cloud/docs/despliegue.md`)
+
+`apps/orest-cloud/docker-compose.yml` pasa de un servicio a tres. **Probado en local con el compose real** (Postgres 16
+desechable, roles y grants de `scripts/`, red `web`); **no en el VPS todavía**.
+
+1. **`web`** — imagen `orest-cloud-web:<WEB_TAG>`, la página de estado en **`https://cloud.orest.com.mx`** (router
+   `orest-cloud`, puerto **3004**: 3000–3003 y 5678 ya estaban tomados). Rol `orest_cloud_web`. **Sin el socket de
+   Docker** y sin el cliente en la imagen: la mitad expuesta no provisiona. Healthcheck en `/api/health`, que no toca la
+   base. El DNS no se toca: el comodín `A *` ya cubre `cloud`. (El apex `orest.com.mx` **no** tiene registro A; es de
+   C-7, no de aquí.)
+2. **`notifier`** — el avisador de altas fallidas: la **misma imagen** que `web`, con `command` propio. Hace un POST a
+   n8n por la red interna, y por eso **no** vive en el agente, que no habla HTTP con nadie. Rol `orest_cloud_web`: los
+   grants de hoy le alcanzan (comprobado con el rol real).
+3. **El proyecto se llama `orest-cloud`** (`name:` en el archivo). Antes era `-p orest-cloud-agent`: la primera vez,
+   `docker compose -p orest-cloud-agent -f apps/orest-cloud/docker-compose.yml down` **antes** del `up -d`, o quedan dos
+   agentes (el arrendamiento impide que trabajen los dos, pero el segundo se queda reiniciando).
+4. **El agente tiene límite de memoria (256M)** y `pull_policy: never`. Era el único contenedor de Cloud sin límite, y
+   un término sin límite vuelve falsa la cuenta del techo.
+
+**Memoria:** límites `agent` 256M, `web` 256M, `notifier` 128M (medidos: 64, 58 y 18 MiB). Con ellos el techo de ORest
+por suma de límites **baja de 7 a 5** — propuesta, no decisión: la cuenta está en `orest-cloud/docs/capacidad.md`, y el
+número lo pone Paul en `ORESTCLOUD_MAX_INSTANCES`. La cuenta trae además la reserva del host (kernel, Docker y `coturn`,
+~270 MiB medidos) y corrige una mezcla de unidades de la versión anterior.

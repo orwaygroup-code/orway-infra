@@ -39,6 +39,8 @@ GRANT SELECT, UPDATE ON "Job" TO orest_cloud_agent;
 -- dispara: `orest_cloud_web` ya tiene SELECT sobre `Job`, así que alcanza.
 GRANT SELECT, INSERT ON "Notice" TO orest_cloud_web;
 GRANT USAGE ON SEQUENCE "Notice_id_seq" TO orest_cloud_web;
+-- Comprobado en la ola C-2c con el rol real, desde el servicio `notifier`: lee los Jobs FAILED (con su Instance) e
+-- inserta su Notice con solo lo de aquí arriba. La web (página de estado) solo lee Instance y Job: también alcanza.
 
 -- `AgentLease` (ola C-2b): el arrendamiento del agente único. SIN ESTO EL AGENTE NUEVO NO ARRANCA.
 -- INSERT para tomarlo la primera vez, UPDATE para tomarlo cuando venció y para renovarlo, SELECT para

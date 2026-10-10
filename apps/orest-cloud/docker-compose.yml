@@ -1,19 +1,28 @@
-# ORest Cloud — el AGENTE (ola C-2, orest-cloud/docs/agente.md). Uno solo, para todo el VPS.
+# ORest Cloud — sus dos mitades, en un solo proyecto de compose (`orest-cloud`):
 #
-#   docker compose --env-file apps/orest-cloud/.env -p orest-cloud-agent -f apps/orest-cloud/docker-compose.yml up -d
+#   agent     la mitad PRIVILEGIADA (ola C-2, orest-cloud/docs/agente.md). Monta el socket de Docker.
+#   web       la mitad EXPUESTA (ola C-2c): la página de estado en https://cloud.orest.com.mx. Traefik la enruta.
+#   notifier  el avisador (ola C-6, orest-cloud/docs/avisos.md): la MISMA imagen que `web`, otro `command`.
 #
-# Es la mitad privilegiada: monta el socket de Docker (equivale a root del host) para crear, detener y
-# actualizar las instancias de ORest. Por eso:
-#   - SIN `ports:` y SIN labels de Traefik. Está en la red `web` solo para llegar a Postgres (es la
-#     única red; Postgres no publica puertos). Traefik tiene `exposedbydefault=false`: no lo enruta.
-#   - Se conecta al registro con `orest_cloud_agent` (sin DELETE, sin TRUNCATE, sin ser dueño) y al
-#     clúster con `orest_provisioner` (CREATEDB, CREATEROLE, sin superusuario):
-#     scripts/orest-cloud-roles.sql. Ojo: con el socket podría hacer `docker exec postgres psql` como
-#     superusuario; los roles frenan errores del agente, no a un agente comprometido.
-#   - UN solo agente: lo hace cumplir un candado de Postgres (un segundo no arranca). `restart` no
-#     produce dos: compose detiene el viejo antes de levantar el nuevo.
-#   - `stop_grace_period` largo: al recibir SIGTERM termina el Job en curso (no corta un provision a
-#     la mitad). Si aun así muere, el siguiente arranque lo declara abandonado y reconcilia el host.
+#   docker compose --env-file apps/orest-cloud/.env -f apps/orest-cloud/docker-compose.yml up -d
+#
+# El proyecto se llama `orest-cloud` (lo fija `name:` abajo; no hace falta `-p`). HASTA LA OLA C-2c SE LLAMABA
+# `orest-cloud-agent` (se levantaba con `-p orest-cloud-agent`). La PRIMERA vez con este archivo, ANTES del `up -d`:
+#
+#   docker compose -p orest-cloud-agent -f apps/orest-cloud/docker-compose.yml down
+#
+# Si no, compose ve al agente viejo como de OTRO proyecto, no lo toca, y levanta un segundo agente. El arrendamiento
+# (AgentLease) impide que trabajen los dos, pero el segundo se queda reiniciando. Ese `down` es el mismo que la ola C-2b
+# ya pedía para cambiar de imagen (agente.md §11): sin altas en vuelo.
+#
+# El orden de un despliegue: `migrate deploy` (desde la imagen del AGENTE, agente.md §10) → grants
+# (scripts/orest-cloud-grants.sql) → `up -d`. La imagen de la web NO migra, a propósito: dos imágenes corriendo
+# `migrate deploy` sobre la misma base es una carrera que no hace falta.
+#
+# Las imágenes se construyen en LOCAL y se suben (`docker save | ssh docker load`); nunca en el VPS. Cada etiqueta
+# corresponde a un commit (regla del ensayo):
+#   orest-cloud:    docker build -f Dockerfile.agent -t orest-cloud-agent:<tag> .
+#                   docker build --build-arg APP_COMMIT=<commit> -t orest-cloud-web:<tag> .
 #
 # .env (chmod 600, no se commitea):
 #   AGENT_TAG=2026.10.08
@@ -21,14 +30,37 @@
 #   PROVISIONER_URL=postgresql://orest_provisioner:…@postgres:5432/postgres
 #   INFRA_DIR=/opt/orway-infra          (la ruta REAL de este repo en el VPS)
 #   BACKUP_DIR=/var/backups/orway/orest
+#   WEB_TAG=2026.10.10
+#   WEB_DATABASE_URL=postgresql://orest_cloud_web:…@postgres:5432/orest_cloud
+#   ORESTCLOUD_PUBLIC_URL=https://cloud.orest.com.mx
+#   ORESTCLOUD_NOTICE_URL=http://n8n:5678/webhook/orest-avisos
+#   ORESTCLOUD_MAX_INSTANCES=           (el techo: LO DECIDE PAUL, orest-cloud/docs/capacidad.md. Vacío = no se vende)
+#
+# Memoria (orest-cloud/docs/capacidad.md): los tres servicios llevan límite. La suma de límites es lo que sostiene el
+# techo de capacidad; un servicio sin límite lo vuelve falso.
+
+name: orest-cloud
 
 networks:
   web:
     external: true
 
 services:
+  # ─── La mitad PRIVILEGIADA ────────────────────────────────────────────────────────────────────────
+  # Monta el socket de Docker (equivale a root del host) para crear, detener y actualizar las instancias de ORest. Por eso:
+  #   - SIN `ports:` y SIN labels de Traefik. Está en la red `web` solo para llegar a Postgres (es la
+  #     única red; Postgres no publica puertos). Traefik tiene `exposedbydefault=false`: no lo enruta.
+  #   - Se conecta al registro con `orest_cloud_agent` (sin DELETE, sin TRUNCATE, sin ser dueño) y al
+  #     clúster con `orest_provisioner` (CREATEDB, CREATEROLE, sin superusuario):
+  #     scripts/orest-cloud-roles.sql. Ojo: con el socket podría hacer `docker exec postgres psql` como
+  #     superusuario; los roles frenan errores del agente, no a un agente comprometido.
+  #   - UN solo agente: lo hace cumplir el arrendamiento AgentLease (un segundo no arranca). `restart` no
+  #     produce dos: compose detiene el viejo antes de levantar el nuevo.
+  #   - `stop_grace_period` largo: al recibir SIGTERM termina el Job en curso (no corta un provision a
+  #     la mitad). Si aun así muere, el siguiente arranque lo declara abandonado y reconcilia el host.
   agent:
     image: orest-cloud-agent:${AGENT_TAG:?falta AGENT_TAG}
+    pull_policy: never
     restart: unless-stopped
     networks: [web]
     environment:
@@ -43,6 +75,100 @@ services:
       - ${INFRA_DIR}:${INFRA_DIR}
       - ${BACKUP_DIR}:${BACKUP_DIR}
     stop_grace_period: 15m
+    # Medido: 64 MB (10 oct 2026, vps-infra.md). Era el único de Cloud sin límite. 256M deja lugar a los `docker
+    # compose` que lanza como hijos (cuentan en su cgroup). Si lo mata el OOM a media alta, el siguiente arranque lo
+    # declara abandonado (agente.md §3): se nota, no se pierde.
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ─── La mitad EXPUESTA ───────────────────────────────────────────────────────────────────────────
+  # Lo que NO lleva es la mitad del punto:
+  #   - NADA del socket de Docker, ni el cliente (la imagen no lo trae). La web no provisiona: si un día lo
+  #     necesita, escribe en la cola y el agente la drena.
+  #   - Rol `orest_cloud_web`: da de alta y pide Jobs; no los mueve. Sin DELETE ni TRUNCATE.
+  web:
+    image: orest-cloud-web:${WEB_TAG:?falta WEB_TAG}
+    pull_policy: never
+    restart: unless-stopped
+    networks: [web]
+    environment:
+      DATABASE_URL: ${WEB_DATABASE_URL:?falta WEB_DATABASE_URL}
+      # La dirección que se le da al cliente (orest-cloud/lib/publicUrl.ts). Sin ella, armar un enlace truena; aquí se
+      # exige para que el despliegue no pueda olvidarla.
+      ORESTCLOUD_PUBLIC_URL: ${ORESTCLOUD_PUBLIC_URL:?falta ORESTCLOUD_PUBLIC_URL}
+      # Vacío = «no configurado» = contratar se NIEGA (orest-cloud/lib/capacity.ts). Nada contrata todavía (C-7).
+      ORESTCLOUD_MAX_INSTANCES: ${ORESTCLOUD_MAX_INSTANCES:-}
+    # Medido en local: 58 MiB después de 40 peticiones (ola C-2c). ORest, el mismo Next con mucho más adentro, mide
+    # 83–92 MB recién creado y tiene 384M.
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=32m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # Como ORest: sin healthcheck, Traefik manda tráfico a un contenedor que todavía arranca. /api/health no toca la base.
+    # node:22-slim no trae curl ni wget: el chequeo es con el propio Node.
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3004/api/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    # 3004: siguiente libre (3000 Orway, 3001 Ayalas, 3002 Perico, 3003 ORest, 5678 n8n). El DNS no se toca: el
+    # comodín `A *` de orest.com.mx ya cubre `cloud` (medido el 10 oct 2026: resuelve a la IP del VPS).
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.orest-cloud.rule=Host(`cloud.orest.com.mx`)
+      - traefik.http.routers.orest-cloud.entrypoints=websecure
+      - traefik.http.routers.orest-cloud.tls.certresolver=le
+      - traefik.http.services.orest-cloud.loadbalancer.server.port=3004
+
+  # ─── El avisador ──────────────────────────────────────────────────────────────────────────────────
+  # La misma imagen que `web`, otro proceso: `node` como PID 1 sobre JavaScript compilado, sin npm ni tsx en medio,
+  # para que el SIGTERM de `docker stop` llegue (medido en local: 0.4 s, sale con 0, «señal recibida»).
+  # NO habla HTTP hacia adentro: sin puerto, sin labels. Sí hacia AFUERA (un POST a n8n), y por eso NO vive en el
+  # agente: el contenedor que monta el socket de Docker no habla HTTP con nadie (plan-autoservicio.md §5).
+  # Rol `orest_cloud_web`: lee Job e Instance, inserta Notice (scripts/orest-cloud-grants.sql; probado con este rol).
+  notifier:
+    image: orest-cloud-web:${WEB_TAG:?falta WEB_TAG}
+    pull_policy: never
+    # FORMA EXEC Y `node` DIRECTO, SIEMPRE. Ni `npm run avisos`, ni `npx tsx …`, ni la forma de texto
+    # (`command: node dist/…`, que compose envuelve en `sh -c`): cualquier intermediario se come el SIGTERM de
+    # `docker stop`, el avisador muere con SIGKILL a media vuelta y sale con 137. Es el defecto 2 del ensayo del
+    # 10 oct (orest-cloud/docs/agente.md §10: el agente quedó en RUNNING). La imagen está anclada por
+    # orest-cloud/tests/webImage.test.ts; ESTE renglón no lo ancla ninguna prueba: el único guardia es este comentario.
+    command: ["node", "dist/notifier/main.js"]
+    restart: unless-stopped
+    networks: [web]
+    environment:
+      DATABASE_URL: ${WEB_DATABASE_URL:?falta WEB_DATABASE_URL}
+      # Sin ella el proceso NO arranca y lo dice (sale con 2): un avisador sin destino no avisa a nadie.
+      ORESTCLOUD_NOTICE_URL: ${ORESTCLOUD_NOTICE_URL:?falta ORESTCLOUD_NOTICE_URL}
+    # Termina el aviso en curso (POST con tope de 10 s y su fila) y sale.
+    stop_grace_period: 30s
+    # Medido en local: 18 MiB.
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
     security_opt:
       - no-new-privileges:true
     logging:
