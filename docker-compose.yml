@@ -71,6 +71,12 @@ services:
       POSTGRES_DB: postgres
     volumes:
       - pg_data:/var/lib/postgresql/data
+      # Los respaldos del agente, en SOLO LECTURA. El agente los escribe desde su lado (corre `pg_dump`
+      # aqui dentro y captura su salida), pero antes nadie podia VERIFICARLOS: el host no tiene
+      # `pg_restore` --ni debe: su version tendria que coincidir con este servidor-- y este contenedor
+      # no veia la carpeta. Verificar un respaldo exigia root y un `docker cp` (ensayo del 10 oct).
+      # Solo lectura a proposito: la base no puede pisar sus propios respaldos.
+      - /var/backups/orway/orest:/var/backups/orway/orest:ro
     networks: [web]
     # Sin `ports:` a propósito — Postgres NO se expone a internet.
     # Las apps lo alcanzan por la red interna con host `postgres`.

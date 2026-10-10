@@ -30,6 +30,15 @@ networks:
 services:
   app:
     image: orest:${IMAGE_TAG:-latest}
+    # Las imagenes se SUBEN (docker save | ssh docker load), nunca se descargan: `next build` pide 2-4 GB y
+    # construir aqui puede degradar a los restaurantes que esten en servicio. Por eso NO se busca en un
+    # registro remoto.
+    #
+    # Y sin esto, una etiqueta que no este en el host hace que Docker SALGA A INTERNET a buscarla. El
+    # ensayo del 10 oct lo midio: un upgrade a una etiqueta inexistente fallo con «pull access denied for
+    # orest», no con «no esta aqui». El resultado era correcto por suerte: si algun dia existiera un
+    # repositorio publico llamado `orest`, Docker CORRERIA UNA IMAGEN AJENA en la instancia de un cliente.
+    pull_policy: never
     restart: unless-stopped
     env_file: .env
     networks: [web]
