@@ -68,9 +68,13 @@ VPS (Docker host)
 
 ## Límites de memoria y swap (7 oct 2026)
 
-**El VPS tiene 2 vCPU, 7.8 GB y `swap 0`.** Sin swap, un servicio que se pasa de memoria no
-desacelera: el kernel elige una víctima y la mata. Puede ser el POS de un restaurante en
-servicio. Hasta hoy **solo `perico-pos` tenía límite**; los demás podían comerse la caja entera.
+**El VPS tiene 2 vCPU y 7.8 GB.** El **swap de 4 GB ya está aplicado** (9 oct 2026, ver abajo); antes
+estaba en 0, y sin swap un servicio que se pasa de memoria no desacelera: el kernel elige una víctima
+y la mata, y puede ser el POS de un restaurante en servicio.
+
+**Los LÍMITES DE MEMORIA DE LA TABLA DE ABAJO SIGUEN SIN APLICARSE.** Solo `perico-pos` tiene uno; los
+demás pueden comerse la caja entera. Mientras eso no cambie, los números de «Techo de capacidad»
+describen una configuración que no existe todavía.
 
 ### Medición que sostiene los números (`docker stats`, 7 oct 2026)
 
@@ -87,9 +91,14 @@ servicio. Hasta hoy **solo `perico-pos` tenía límite**; los demás podían com
 Los límites son ~2× lo medido. **Postgres va holgado a propósito**: crece ~7 MB por conexión
 y es la dependencia compartida de todas las apps — si a Postgres lo mata el OOM, se caen todas.
 
-### Swap: 4 GB
+### Swap: 4 GB — APLICADO el 9 de octubre de 2026
 
 No es para rendimiento. Es para que un pico **degrade en vez de matar**.
+
+Comprobado en el VPS: `swapon --show` da `/swapfile file 4G`, `free -h` da 4.0Gi, la línea está en
+`/etc/fstab` (así que sobrevive un reinicio) y `vm.swappiness = 10`. Los comandos que lo hicieron quedan
+abajo como registro; **no se vuelven a correr**: `fallocate` sobre un swap activo falla con
+«Text file busy», y eso es lo que tiene que pasar.
 
 ```bash
 fallocate -l 4G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
@@ -110,8 +119,8 @@ sysctl -w vm.swappiness=10 && echo 'vm.swappiness=10' >> /etc/sysctl.d/99-swap.c
 Poner un límite **recrea el contenedor**. Reiniciar `postgres` tira la conexión de **todas** las
 apps a la vez. Se hace **fuera de horario de servicio** (de madrugada, o lunes).
 
-Orden: primero el swap (no requiere reiniciar nada), después los contenedores — las apps antes
-que Postgres, y Postgres al final.
+Orden: primero el swap (no requiere reiniciar nada) — **ya hecho, 9 oct** —, después los contenedores:
+las apps antes que Postgres, y Postgres al final. **Esa segunda mitad es la que queda pendiente.**
 
 ### Techo de capacidad para ORest
 
@@ -124,8 +133,15 @@ de Postgres por sus 5 conexiones: **~335 MB por restaurante**.
 | Construyendo fuera y subiendo la imagen | **12** |
 | Más allá | topan las conexiones de Postgres: 16 |
 
-`next build` pide 2–4 GB. **Con swap 0 y 6 restaurantes operando, un despliegue en hora de
-comida puede matar un POS.** Sacar la construcción del VPS deja de ser opcional en el cliente 5.
+`next build` pide 2–4 GB, y por eso **las imágenes se construyen en local y se suben**
+(`docker save … | ssh … docker load`), nunca en el VPS. Con el swap puesto un pico ya degrada en vez de
+matar, pero construir ahí sigue estando prohibido: degradar a seis restaurantes a media comida no es un
+resultado aceptable, solo uno menos malo.
+
+La cuenta completa de capacidad vive ahora en `orest-cloud/docs/capacidad.md`, con los tres criterios
+(límites: 3 · medido: 12 · conexiones: 16). La tabla de abajo conserva un escenario de «6» que **ya no
+aplica**: suponía construir la imagen en el VPS, y desde la ola C-2 el agente aprovisiona desde una
+imagen precargada.
 
 ### Deriva conocida
 
