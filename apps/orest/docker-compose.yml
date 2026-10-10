@@ -34,16 +34,32 @@ services:
     env_file: .env
     networks: [web]
 
-    # Contención en VPS compartido (2 vCPU, 7.8 GB, swap 0 — ver vps-infra.md).
-    # Una instancia de ORest mide ~250 MB en reposo (medido en perico-pos, mismo
-    # stack). El límite va a ~3x para absorber una hora pico sin matar al vecino.
+    # Contención en VPS compartido (2 vCPU, 7.8 GB, swap 4 GB — ver vps-infra.md).
+    #
+    # MEDIDO EN ORest, no estimado (10 oct 2026, `docker stats` con cinco instancias arriba):
+    #   recién creada y en reposo ..... 83–92 MB
+    #   `demo`, con meses de uso ...... 167 MB
+    #   perico-pos (otra app, en uso) . 245 MB
+    # El comentario anterior decía ~250 MB "medido en perico-pos, mismo stack": era 3x de más para
+    # ORest, y de ahí salía el límite de 768M.
+    #
+    # 384M es ~2.3x de una instancia con meses de uso y más que la app más cargada del VPS, así que
+    # absorbe una hora pico sin matar al vecino. Y DUPLICA EL TECHO: con 768M caben 3 restaurantes
+    # por suma de límites; con 384M caben 7 (orest-cloud/docs/capacidad.md).
+    #
+    # La reserva baja igual, para mantener la proporción de 1/3 que tenía (256/768 -> 128/384).
+    #
+    # OJO: cambiar esto RECREA el contenedor. A una instancia viva le toca un corte de segundos, así
+    # que a un cliente en servicio se le hace fuera de su horario. Una instancia NUEVA lo toma sola.
+    # Si algún día un restaurante grande necesita más, lo que NO se hace es subirle el límite a todos:
+    # se vuelve `${MEM_LIMIT:-384M}` y ese cliente lo pone en su .env.
     deploy:
       resources:
         limits:
           cpus: "1.0"
-          memory: 768M
+          memory: 384M
         reservations:
-          memory: 256M
+          memory: 128M
 
     # Logs sin rotar llenan el disco, y el disco lleno tumba a TODOS los proyectos.
     logging:

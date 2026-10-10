@@ -122,6 +122,38 @@ apps a la vez. Se hace **fuera de horario de servicio** (de madrugada, o lunes).
 Orden: primero el swap (no requiere reiniciar nada) — **ya hecho, 9 oct** —, después los contenedores:
 las apps antes que Postgres, y Postgres al final. **Esa segunda mitad es la que queda pendiente.**
 
+### MEDIDO el 10 de octubre de 2026, con cinco instancias de ORest arriba
+
+Durante el ensayo del agente hubo 5 instancias de ORest corriendo a la vez (4 desechables + `demo`),
+más todo lo demás. `docker stats`:
+
+| Contenedor | Medido | Límite |
+|---|---|---|
+| n8n | **462 MB** | 768 MB |
+| orway-app | 277 MB | 1 GB |
+| perico-pos | 245 MB | 768 MB |
+| postgres | 225 MB | 1.5 GB |
+| orest `demo` (meses de uso) | **167 MB** | 384 MB *(antes 768)* |
+| ayalas-app | 145 MB | 512 MB |
+| traefik | 120 MB | — |
+| orest recién creada, en reposo | **83–92 MB** | 384 MB |
+| orest-cloud-agent | 64 MB | — |
+| coturn | 26 MB | — |
+
+**`free -h`: 2.3 Gi usados de 7.8, 5.4 Gi disponibles, swap 0 B usados.** Con trece contenedores.
+
+Dos cosas que esto corrigió:
+
+1. **La cifra de ~250–335 MB por instancia de ORest estaba 3–4x de más.** Salía de medir
+   **perico-pos**, no ORest. Por eso el límite por instancia bajó de **768M a 384M** (10 oct), lo que
+   **duplica el techo por suma de límites: de 3 restaurantes a 7.**
+2. **n8n es el mayor consumidor del VPS y no tiene límite.** El día que falte memoria, el kernel elige
+   entre los que no tienen techo, y ése es el más grande de la lista.
+
+**Lo medido es EN REPOSO.** Un restaurante en servicio consume más —`demo` ya está en 167 MB solo por
+haber vivido— y Node no devuelve memoria con ganas. Antes de fijar el número del techo falta **medir una
+instancia bajo carga real**.
+
 ### Techo de capacidad para ORest
 
 Cada instancia de ORest cuesta ~300 MB (Perico, su equivalente, mide 249 en reposo) más ~35 MB
