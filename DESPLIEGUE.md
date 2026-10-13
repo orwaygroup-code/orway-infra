@@ -269,8 +269,11 @@ Hace: `git pull` (master) → `docker build` → `up -d` → migraciones + RLS
 
 - **Reemplazo del apex:** al levantar Orway con `Host(orwaygroup.com)`, Traefik sirve
   Orway en el dominio principal; la landing anterior deja de verse ahí.
-- **Backups (no negociable):** `pg_dump` de cada BD + el volumen `orway_storage`
-  (Orway Cloud), diarios y **fuera del VPS**. Pendiente de automatizar con cron.
+- **Backups (no negociable):** `pg_dump` de cada BD, diario a las 3:00 por cron
+  (`backup-all-dbs.sh`), verificado al crearse y copiado **fuera del VPS** a
+  Google Drive con rclone. Hecho el 13-oct-2026 y probado restaurando.
+  **Sigue pendiente el volumen `orway_storage` de Orway Cloud**, que esa cron no
+  toca: solo respalda bases de datos.
 - **Secretos:** solo en los `.env` del VPS (`chmod 600`) y en Credentials de n8n.
   Nunca en el repo.
 - **Aislamiento:** una BD por proyecto. Endurecer el acceso cruzado entre BDs

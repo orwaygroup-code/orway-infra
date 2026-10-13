@@ -65,9 +65,19 @@ y SELECT funcionan con normalidad.
    `scripts/harden-postgres-isolation.sql`. Está escrito y comentado; hay que
    correrlo con intención, no automáticamente.
 
-3. **No hay backups automatizados.** `Despliegue.md` lo marca como pendiente.
-   Para un CRM es deuda; para un POS que guarda cortes de caja es
-   descalificante. **Esto bloquea la salida a producción**, no la construcción.
+3. ~~**No hay backups automatizados.**~~ **Resuelto el 13-oct-2026.** Cron
+   diaria a las 3:00 con `backup-all-dbs.sh`, que verifica cada volcado con
+   `pg_restore --list` y compara el tamaño byte a byte antes de darlo por
+   bueno. Rotación de 14 días en `/var/backups/orway` y copia fuera del VPS a
+   Google Drive vía rclone (`BACKUP_DEST=rclone`), con alcance `drive.file`.
+
+   **Y se probó una restauración**, que es lo que convierte un respaldo en un
+   respaldo: `perico_db` restaurada en una base desechable dio los mismos 225
+   pedidos, 35 turnos y $36,495.00 cobrados que la original.
+
+   Lo que queda abierto: **nadie lee `/var/log/orway-backup.log`**. Una cron
+   que falla a las 3 de la mañana no avisa a nadie, y desde que El Perico pasó
+   a mantenimiento mensual puede tardar semanas en notarse.
 
 ## Aprovisionar
 
