@@ -46,7 +46,17 @@ VPS (Docker host)
 2. Crear su **`.env`** (dominio, `DATABASE_URL`, `BOT_API_KEY`, `SESSION_SECRET`).
 3. Levantar el **contenedor** (imagen Ayalas para clientes de Ayalas; imagen propia para
    otros proyectos) con sus labels de Traefik. Ver `scripts/new-ayalas-client.sh`.
-4. `prisma db push` (+ `db:seed` sin datos demo en prod) contra su BD.
+4. Migrar su BD y crear el singleton de ajustes: **`prisma migrate deploy`** y **`npm run db:seed`**
+   (que crea UNA fila de `RestaurantSettings` y nada más). **En ORest nunca `prisma db push`**: el esquema
+   crece migración a migración (`docs/producto.md`, decisión 2; `CLAUDE.md`) y `db push` deja la BD sin
+   historial reproducible.
+   **El alta no siembra datos de ejemplo en ninguna instancia, y no depende de que alguien se acuerde.**
+   El restaurante de ejemplo es **otro comando** (`npm run db:seed:demo`) que no se corre aquí ni se agrega
+   a esta plantilla, y exige **`SEED_DEMO=<el nombre de la BD de esa instancia>`**: una línea copiada en la
+   plantilla **falla cerrado** en todos los clientes menos en el que se nombró. Sembrarlo además **fija la
+   moneda de ese restaurante para siempre** (409 `CURRENCY_LOCKED`, y no hay ruta que lo deshaga: habría que
+   borrar un pago), así que el ejemplo va en una instancia **de ejemplo**, nunca en la definitiva de un
+   cliente.
 5. Crear el **workflow en n8n** apuntando a `https://<dominio>/api/bot/*`
    (contrato: `docs/n8n-bot-api.md` en el repo de Ayalas).
 
