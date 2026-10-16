@@ -212,10 +212,12 @@ services:
   # Eso reduce la ventana de exposición a los minutos en que alguien lo está usando, y de paso no come
   # memoria del techo de capacidad cuando nadie mira (C-4 lo propuso por memoria; sirve para las dos cosas).
   #
-  # Lo que queda abierto y NO se arregla aquí: las comprobaciones de `Sec-Fetch-Site` y `Origin` del panel
-  # **fallan ABIERTO cuando la cabecera no viene** (hallazgo de la auditoría, 14 oct). Un navegador siempre
-  # las manda; un cliente HTTP como n8n, no. Mientras eso no se vuelva fallar-cerrado, el `profiles` es la
-  # defensa que queda, y por eso no es opcional.
+  # Para que quede dicho, porque la auditoría lo afirmó mal el 14 oct y lo corrigió el 15: las comprobaciones
+  # de cabeceras del panel **SÍ fallan cerrado** — si no viene `Sec-Fetch-Site` ni `Origin`, se niega
+  # (panel/server.ts:71, probado). Lo que ninguna cabecera puede impedir es un falsificador deliberado: lo que
+  # pueda hablar HTTP en esta red puede fijar `Host: localhost` a mano. Suspender lleva además un vale de un
+  # solo uso que no depende de cabeceras; `RESUME` y `PROVISION` todavía no. De ahi que el `profiles` no sea
+  # opcional: acota la ventana a los minutos de uso.
   panel:
     image: orest-cloud-web:${WEB_TAG:?falta WEB_TAG}
     pull_policy: never
