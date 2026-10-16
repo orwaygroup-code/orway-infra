@@ -107,6 +107,16 @@ services:
       ORESTCLOUD_PUBLIC_URL: ${ORESTCLOUD_PUBLIC_URL:?falta ORESTCLOUD_PUBLIC_URL}
       # Vacío = «no configurado» = contratar se NIEGA (orest-cloud/lib/capacity.ts). Nada contrata todavía (C-7).
       ORESTCLOUD_MAX_INSTANCES: ${ORESTCLOUD_MAX_INSTANCES:-}
+      # El secreto con el que se firma la sesión del panel del cliente (ola C-9,
+      # orest-cloud/docs/cuenta.md §4.1). SIN VALOR POR OMISIÓN a propósito: un secreto que cualquiera
+      # pueda calcular deja que cualquiera firme una sesión para la cuenta que quiera. Mínimo 32
+      # caracteres, se genera con `openssl rand -base64 32`, y CAMBIARLO TUMBA TODAS LAS SESIONES
+      # abiertas — que es justo lo que se hace si se sospecha de una.
+      # Comprobado el 15 oct 2026, desplegando C-9 sin él: /entrar sí carga, pero responde «Entrar no
+      # está disponible en este momento» y nadie entra. Falla cerrado y no dice por qué, que es lo
+      # correcto de cara al cliente — y por eso mismo el despliegue no se puede dar cuenta solo.
+      # El `notifier` NO lo necesita: usa la misma imagen pero no sirve /entrar ni importa lib/sesion.
+      ORESTCLOUD_SESSION_SECRET: ${ORESTCLOUD_SESSION_SECRET:?falta ORESTCLOUD_SESSION_SECRET}
     # Medido en local: 58 MiB después de 40 peticiones (ola C-2c). ORest, el mismo Next con mucho más adentro, mide
     # 83–92 MB recién creado y tiene 384M.
     deploy:
