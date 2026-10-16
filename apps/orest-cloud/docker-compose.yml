@@ -186,3 +186,76 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+  # ─── El panel INTERNO de Orway (ola C-4, orest-cloud/docs/panel.md) ────────────────────────
+  # La MISMA imagen que `web`, otro proceso. **No es la aplicación que Traefik enruta**: la web corre
+  # `node server.js` (Next) y no contiene el panel. Que el código viaje en la imagen no lo publica.
+  #
+  # NO TIENE AUTENTICACIÓN, A PROPÓSITO (decisión de Paul, 14 oct; panel.md §1): escucha en loopback, no
+  # pasa por Traefik, no tiene subdominio ni certificado, y **la llave de SSH es la credencial**. Se llega
+  # con `ssh -N -L 3005:127.0.0.1:3005 paul@<vps>` y luego `http://localhost:3005` en el navegador propio.
+  # Es más fuerte que un panel con contraseña porque no hay superficie pública: ni pantalla de entrada que
+  # atacar, ni sesión que robar, ni «olvidé mi contraseña» que dependa del correo. Y no aparece en
+  # transparencia de certificados, que es por donde los robots encuentran subdominios nuevos.
+  #
+  # ⚠ LO QUE `ports` NO PROTEGE, Y HAY QUE DECIRLO CLARO. `web` es la ÚNICA red de este compose y es
+  # EXTERNA Y COMPARTIDA: ahí vive también n8n, que hace peticiones HTTP arbitrarias por oficio. Publicar
+  # en `127.0.0.1:3005` controla quién llega DESDE EL HOST; **no controla a los otros contenedores**, que
+  # alcanzan `panel:3005` por nombre de servicio sin pasar por el `ports`. No hay arreglo a nivel de
+  # contenedor: para que el `ports` funcione, el proceso tiene que escuchar en 0.0.0.0, y entonces la red
+  # interna también lo ve. Separar la red no se puede sin mover Postgres, que es de otro compose.
+  #
+  # POR ESO VA CON `profiles`: **no arranca con `docker compose up -d`**. Se levanta cuando se usa
+  #     docker compose --profile panel up -d panel
+  # y se baja al terminar
+  #     docker compose --profile panel down panel
+  # Eso reduce la ventana de exposición a los minutos en que alguien lo está usando, y de paso no come
+  # memoria del techo de capacidad cuando nadie mira (C-4 lo propuso por memoria; sirve para las dos cosas).
+  #
+  # Lo que queda abierto y NO se arregla aquí: las comprobaciones de `Sec-Fetch-Site` y `Origin` del panel
+  # **fallan ABIERTO cuando la cabecera no viene** (hallazgo de la auditoría, 14 oct). Un navegador siempre
+  # las manda; un cliente HTTP como n8n, no. Mientras eso no se vuelva fallar-cerrado, el `profiles` es la
+  # defensa que queda, y por eso no es opcional.
+  panel:
+    image: orest-cloud-web:${WEB_TAG:?falta WEB_TAG}
+    pull_policy: never
+    # FORMA EXEC Y `node` DIRECTO, por lo mismo que el avisador: cualquier intermediario (`npm run`, `npx
+    # tsx`, o la forma de texto que compose envuelve en `sh -c`) se come el SIGTERM de `docker stop`.
+    command: ["node", "dist/panel/main.js"]
+    # La razón de todo lo de arriba. Sin este perfil, `up -d` lo dejaría corriendo las 24 horas.
+    profiles: ["panel"]
+    # Herramienta que se abre a ratos, no un servicio: no vuelve sola tras un reinicio del VPS.
+    restart: "no"
+    networks: [web]
+    environment:
+      DATABASE_URL: ${WEB_DATABASE_URL:?falta WEB_DATABASE_URL}
+      ORESTCLOUD_PANEL_PORT: "3005"
+      # DENTRO DE UN CONTENEDOR TIENE QUE SER 0.0.0.0: `127.0.0.1` aquí es el loopback DEL CONTENEDOR y
+      # Docker no le puede reenviar el puerto. El panel lo GRITA en el log cuando no es loopback, porque
+      # ahí lo único que lo separa del mundo deja de ser el código y pasa a ser este `ports`.
+      ORESTCLOUD_PANEL_BIND: "0.0.0.0"
+      # El panel PINTA la capacidad (orest-cloud/panel/html.ts). Sin esta variable no se cae: dice «El techo
+      # del VPS no está configurado» mientras la web tiene el número puesto — dos pantallas contestando
+      # distinto lo mismo. Mismo `:-` que en `web`: vacío es un estado válido, no un error.
+      ORESTCLOUD_MAX_INSTANCES: ${ORESTCLOUD_MAX_INSTANCES:-}
+    # Solo en el loopback DEL HOST: el túnel de SSH termina ahi. Ver el aviso de arriba sobre lo que esto
+    # NO cubre.
+    ports:
+      - "127.0.0.1:3005:3005"
+    # Sin labels de Traefik, y no es solo omisión: Traefik tiene `exposedbydefault=false`, así que sin
+    # labels no lo enruta. **Agregarle labels a este servicio es publicar un panel que suspende
+    # restaurantes.** Si alguna vez parece necesario, no lo es.
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=16m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
