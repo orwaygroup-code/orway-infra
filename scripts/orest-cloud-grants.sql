@@ -46,3 +46,33 @@ GRANT USAGE ON SEQUENCE "Notice_id_seq" TO orest_cloud_web;
 -- INSERT para tomarlo la primera vez, UPDATE para tomarlo cuando venció y para renovarlo, SELECT para
 -- ver el plazo que vio. No necesita permiso de secuencia: el `id` es 1 por omisión, no es serial.
 GRANT SELECT, INSERT, UPDATE ON "AgentLease" TO orest_cloud_agent;
+
+-- `Cuenta` (ola C-9): quién contrató, y lo único con lo que alguien entra a Cloud. **TERCERA VEZ** que una
+-- migración trae tabla nueva; las dos anteriores se olvidaron y el encabezado de este archivo ya lo advertía.
+-- Sin esto, `/entrar` y `/cuenta` responden `permission denied for table "Cuenta"`.
+--
+-- SELECT Y NADA MÁS, medido en el código y no supuesto: desde `app/` todo lo que se hace con `Cuenta` es leer
+-- (`authenticate` lee email y passwordHash; `panelFor` lee el correo y sus instancias). El ÚNICO escritor es
+-- `upsertCuenta`, y solo lo llama `tooling/cuenta.ts` (`npm run cuenta`), que se corre como el dueño. Por eso
+-- tampoco va la secuencia: hoy nada inserta en `Cuenta` desde la web. Cuando el alta de C-7 exista, eso cambia
+-- y entonces se agregan INSERT y `USAGE ON SEQUENCE "Cuenta_id_seq"` — aquí, en este archivo.
+--
+-- El SELECT no es opcional aunque un día nada lea la tabla: `Instance.cuentaId` es una llave foránea, y quien
+-- inserte una instancia necesita poder ver la cuenta a la que la cuelga.
+--
+-- El AGENTE no entra en esta lista: `agent/` y `notifier/` no mencionan `Cuenta` ni el correo del dueño
+-- (comprobado por búsqueda en los dos). El correo salió de `Instance` y a ellos nunca les hizo falta.
+GRANT SELECT ON "Cuenta" TO orest_cloud_web;
+
+-- `AgentLease` para la WEB (ola C-4): el panel interno avisa si el agente no parece vivo, porque suspender es
+-- insertar un Job y un agente muerto deja el Job en la cola PARA SIEMPRE — el restaurante sigue cobrando
+-- mientras uno cree que le cortó el servicio. Ése es el peor fallo posible del panel.
+--
+-- POR COLUMNA, y `token` NO ESTÁ: el token es lo que prueba la propiedad del arrendamiento, y la mitad expuesta
+-- de Cloud no tiene por qué poder leerlo ni tenerlo en memoria. Van las tres que el panel realmente usa:
+-- `holder` y `expiresAt` que selecciona, más `id` porque lo nombra en el WHERE y Postgres exige permiso sobre
+-- toda columna que la consulta menciona, no solo las que devuelve.
+--
+-- Sin este permiso el panel NO se cae: dice que no sabe si el agente está vivo. Pero entonces el único aviso
+-- que hay antes de suspender a un cliente deja de existir, así que ponlo.
+GRANT SELECT ("id", "holder", "expiresAt") ON "AgentLease" TO orest_cloud_web;
