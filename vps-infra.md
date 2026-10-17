@@ -62,6 +62,20 @@ VPS (Docker host)
 
 ## Reglas duras
 - **Backups automáticos** de todas las BDs (diarios, fuera del VPS). No negociable.
+  **Destino decidido el 16 de octubre de 2026: Google Drive**, y con tres condiciones que no son
+  opcionales porque son las que hacen que el respaldo sirva:
+  1. **Cuenta de servicio con su propia carpeta, nunca el Drive personal.** La credencial vive en el VPS;
+     si el VPS cae, cae todo lo que esa credencial alcance. Una carpeta acota el daño; un Drive personal no.
+  2. **Cifrar antes de subir, con llave PÚBLICA** (`age -r …`). La privada **no toca el servidor**: así un
+     VPS comprometido no puede leer los respaldos viejos, que es justo el escenario en que hacen falta.
+     Sin esto son bases de datos de clientes, en claro, en una carpeta de Drive.
+  3. **El `cron` avisa cuando FALLA**, no solo cuando funciona. Un respaldo silencioso que lleva tres
+     semanas sin correr es peor que ninguno, porque se cree que está.
+
+  **Y lo que falta no es el destino: es haber restaurado uno.** El `pg_dump` ya existe y está probado
+  (el `SNAPSHOT` del agente, con `pg_restore -l`), pero cae en `BACKUP_DIR`, **que es un directorio del
+  propio VPS**. Hasta que un respaldo se restaure una vez contra una base desechable, no hay respaldo:
+  hay un archivo.
 - **Secretos** (Meta, OpenAI, `BOT_API_KEY`, DB) en `.env`/Credentials de n8n, nunca en el
   repo ni en el código.
 - **Aislamiento / blast radius:** el Sistema integral de Orway (negocio propio) compartiendo
