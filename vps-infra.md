@@ -90,20 +90,26 @@ VPS (Docker host)
   «dejó de reportar» con V-3; el campo `kind` existe para que entonces el mismo flujo los ramifique sin
   tocar el avisador.
 
-  **Destino decidido el 16 de octubre de 2026: Google Drive**, y con tres condiciones que no son
-  opcionales porque son las que hacen que el respaldo sirva:
-  1. **Cuenta de servicio con su propia carpeta, nunca el Drive personal.** La credencial vive en el VPS;
-     si el VPS cae, cae todo lo que esa credencial alcance. Una carpeta acota el daño; un Drive personal no.
-  2. **Cifrar antes de subir, con llave PÚBLICA** (`age -r …`). La privada **no toca el servidor**: así un
-     VPS comprometido no puede leer los respaldos viejos, que es justo el escenario en que hacen falta.
-     Sin esto son bases de datos de clientes, en claro, en una carpeta de Drive.
-  3. **El `cron` avisa cuando FALLA**, no solo cuando funciona. Un respaldo silencioso que lleva tres
-     semanas sin correr es peor que ninguno, porque se cree que está.
+  **HECHO desde el 13 de octubre de 2026**, y conviene decirlo aquí porque este documento llegó a
+  afirmar lo contrario: `scripts/backup-all-dbs.sh` corre **diario a las 3:00 por cron**, verifica cada
+  volcado con `pg_restore --list` al crearlo, y lo copia **fuera del VPS a Google Drive con rclone**
+  (`BACKUP_DEST=rclone`, `BACKUP_REMOTE=orway-drive:respaldos`). **Y se probó una restauración**: la base
+  de Perico, restaurada en una desechable, dio los mismos 225 pedidos, 35 turnos y 36,495.00 cobrados que
+  la original (commit `adb7966`; `DESPLIEGUE.md` lo registra igual).
 
-  **Y lo que falta no es el destino: es haber restaurado uno.** El `pg_dump` ya existe y está probado
-  (el `SNAPSHOT` del agente, con `pg_restore -l`), pero cae en `BACKUP_DIR`, **que es un directorio del
-  propio VPS**. Hasta que un respaldo se restaure una vez contra una base desechable, no hay respaldo:
-  hay un archivo.
+  **Lo que SÍ falta, medido en el script y no supuesto:**
+  1. **No cifra antes de subir.** Hoy son bases de clientes, en claro, en una carpeta de Drive. Lo correcto
+     es cifrar con llave **pública** (`age -r …`) y que la privada **no toque el servidor**: así un VPS
+     comprometido no puede leer los respaldos viejos, que es justo el escenario en que hacen falta.
+  2. **No avisa cuando falla.** Solo rota lo local (`find … -mtime +$DIAS -delete`). Un respaldo silencioso
+     que lleva tres semanas sin correr es peor que ninguno, porque se cree que está.
+  3. **El volumen `orway_storage` no se respalda**: esa cron solo toca bases de datos (`DESPLIEGUE.md`).
+
+  > **Por qué estuvo mal escrito tres días.** El 16 de octubre la auditoría agregó aquí que «no hay
+  > respaldo: hay un archivo». Lo dedujo de un `grep` en **este solo archivo**, sin abrir `DESPLIEGUE.md`
+  > ni `scripts/`, y confundió el `SNAPSHOT` del agente —que sí cae en `BACKUP_DIR`, dentro del VPS— con
+  > la cron diaria, que es otra cosa y sí sale. Queda escrito porque el error no fue de dato sino de
+  > método: **medir en un archivo no es medir en el repo.**
 - **Secretos** (Meta, OpenAI, `BOT_API_KEY`, DB) en `.env`/Credentials de n8n, nunca en el
   repo ni en el código.
 - **Aislamiento / blast radius:** el Sistema integral de Orway (negocio propio) compartiendo
