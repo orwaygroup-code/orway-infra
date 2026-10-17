@@ -6,9 +6,11 @@
 > Si esta arquitectura cambia, se actualiza AQUÍ (fuente única de verdad).
 
 ## Idea central
-Un **VPS** aloja **varios proyectos** de Orway (hoy: Sistema integral de Orway + Ayalas;
-después: más CRMs/sistemas y chatbots). Todo corre en **Docker**, detrás de **Traefik**
+Un **VPS** aloja **varios proyectos** de Orway. Todo corre en **Docker**, detrás de **Traefik**
 como reverse proxy con TLS automático. La orquestación de chatbots es **n8n compartido**.
+
+Lo que hay **hoy** (aquí decía «Sistema integral de Orway + Ayalas», que se quedó corto: más abajo este
+mismo documento mide **trece contenedores**):
 
 ```
 VPS (Docker host)
@@ -17,6 +19,11 @@ VPS (Docker host)
 ├── n8n (1)            ← orquesta TODOS los chatbots (1 workflow por bot/cliente)
 ├── orway-integral     ← Sistema integral de Orway (su contenedor)
 ├── ayalas-<cliente>   ← Ayalas por cliente (misma imagen, distinto .env)
+├── perico-pos         ← Perico (su contenedor)
+├── orest-<cliente>    ← ORest por cliente: `demo`, y las que da de alta el agente de Cloud
+├── orest-cloud        ← ORest Cloud (apps/orest-cloud): `agent`, `web` (cloud.orest.com.mx),
+│                        `notifier`, y `panel` solo cuando se usa (va con `profiles`)
+├── coturn             ← corre en el VPS y NO está en este repo (ver «Deriva conocida»)
 └── (futuros CRMs / chatbots)
 ```
 
@@ -119,8 +126,12 @@ VPS (Docker host)
 
 ## Estado
 - **Arquitectura: decidida** (Docker + Traefik, Postgres y n8n compartidos, app por cliente).
-- **Configs:** este repo trae el scaffold (`docker-compose.yml`, template de app, script).
-  **Aún no probados en un VPS real**; se validan en el primer deploy.
+- **Configs: PROBADOS en el VPS real.** Aquí decía «aún no probados en un VPS real; se validan en el
+  primer deploy», y se quedó atrás: **el primer deploy real fue el 2026-06-27** (`DESPLIEGUE.md` titula
+  así su sección de lecciones), y desde entonces este repo sostiene lo que corre. La evidencia está en
+  este mismo documento: **dos mediciones de `docker stats` tomadas en el VPS** (7 y 10 de octubre de
+  2026), el swap de 4 GB comprobado con `swapon --show`, los respaldos diarios con una restauración
+  probada (13 de octubre), y la mitad web de ORest Cloud, su avisador y su panel **desplegados**.
 
 ---
 
@@ -130,9 +141,23 @@ VPS (Docker host)
 estaba en 0, y sin swap un servicio que se pasa de memoria no desacelera: el kernel elige una víctima
 y la mata, y puede ser el POS de un restaurante en servicio.
 
-**Los LÍMITES DE MEMORIA DE LA TABLA DE ABAJO SIGUEN SIN APLICARSE.** Solo `perico-pos` tiene uno; los
-demás pueden comerse la caja entera. Mientras eso no cambie, los números de «Techo de capacidad»
-describen una configuración que no existe todavía.
+**LOS LÍMITES YA ESTÁN DECLARADOS, TODOS.** Aquí decía que seguían sin aplicarse y que «solo
+`perico-pos` tiene uno»: **falso en el repo**. Hoy lleva `limits.memory` declarado cada servicio —
+traefik 256M, postgres 1536M, n8n 768M, orway 1G, ayalas 512M, perico 768M, orest 384M, y los cuatro de
+ORest Cloud (agent 256M, web 256M, notifier 128M, panel 128M). Se comprueba con
+`grep -n 'memory:' docker-compose.yml apps/*/docker-compose.yml`, **leyendo si cada renglón está bajo
+`limits:` o bajo `reservations:`**: perico y orest declaran además una *reserva* (256M y 128M), que es
+otra cosa y no se suma al techo.
+
+**La salvedad honesta, que no es lo mismo: desde el repo no se puede saber si cada contenedor del VPS ya
+se recreó con su límite.** Un límite nuevo en el compose solo surte efecto cuando el contenedor se vuelve
+a crear (`up -d`), no cuando se reinicia. Así que queda **pendiente de comprobar EN EL VPS**, con
+`docker inspect -f '{{.Name}} {{.HostConfig.Memory}}' $(docker ps -q)`, que ninguno esté en `0`. Es una
+verificación que falta, no una configuración que falte.
+
+Por eso los números de «Techo de capacidad» **sí tienen suelo escrito**: la cuenta de
+`orest-cloud/docs/capacidad.md` —la que sostiene el techo de **5** que Paul decidió el 17 de octubre de
+2026— suma exactamente estos límites declarados.
 
 ### Medición que sostiene los números (`docker stats`, 7 oct 2026)
 
@@ -243,14 +268,20 @@ qué es. Hay que meterlo a este repo o quitarlo del VPS.
 
 ## ORest Cloud: el agente (ola C-2, 8 oct 2026; detalle en `orest-cloud/docs/agente.md`)
 
-Cambia tres cosas de esta infra. **Ninguna está probada en el VPS todavía**: el ensayo con un cliente
-desechable está en `orest-cloud/docs/agente.md` §9.
+Cambia tres cosas de esta infra. **Las tres están probadas en el VPS**: aquí decía que ninguna lo estaba,
+y el ensayo **se corrió el 10 de octubre de 2026** — los 18 pasos de `orest-cloud/docs/agente.md` §9, con
+seis instancias desechables y trece Jobs (el resultado, en la §10 de ese documento: alta `SUCCEEDED` en
+9.3 s, TLS en un subdominio nuevo, aislamiento de bases, suspender y reanudar, un upgrade bueno y uno
+malo, y la muerte del agente a la mitad).
 
 1. **Un contenedor privilegiado, `orest-cloud-agent`** (`apps/orest-cloud/docker-compose.yml`). Monta
    `/var/run/docker.sock`, lo que equivale a root del host, para crear, detener y actualizar instancias
    de ORest. Corre sin `ports:`, sin labels de Traefik (`exposedbydefault=false`) y sin HTTP. Está en
    `web` solo para llegar a Postgres. Monta `orway-infra` en la MISMA ruta que en el host. Es uno solo:
-   lo hace cumplir un candado de Postgres.
+   lo hace cumplir **una fila con latido, `AgentLease`** (`orest-cloud/docs/agente.md:445`). Aquí decía
+   «un candado de Postgres»: ése era `pg_advisory_lock`, de **sesión**, y el ensayo del 10 de octubre
+   descubrió que se caía a los ~5 minutos sin trabajo cuando el pool reciclaba su conexión — 143
+   reinicios en el VPS. La ola C-2b lo reemplazó por el arrendamiento.
 2. **Roles de Postgres para Cloud** (`scripts/orest-cloud-roles.sql`, una vez; `scripts/orest-cloud-grants.sql`,
    después de cada migración de Cloud): dueño, web, agente y `orest_provisioner`, este último con
    `CREATEDB CREATEROLE` y **sin superusuario**. Ninguno con `DELETE` ni `TRUNCATE` en el registro.
@@ -262,8 +293,10 @@ desechable está en `orest-cloud/docs/agente.md` §9.
 
 ## ORest Cloud: la mitad web (ola C-2c, 10 oct 2026; detalle en `orest-cloud/docs/despliegue.md`)
 
-`apps/orest-cloud/docker-compose.yml` pasa de un servicio a tres. **Probado en local con el compose real** (Postgres 16
-desechable, roles y grants de `scripts/`, red `web`); **no en el VPS todavía**.
+`apps/orest-cloud/docker-compose.yml` pasa de un servicio a tres (cuatro con el `panel` de la ola C-4, que va con
+`profiles`). Probado primero en local con el compose real (Postgres 16 desechable, roles y grants de `scripts/`, red
+`web`) y **ya desplegado en el VPS**: aquí decía «no en el VPS todavía», y la mitad web está viva en
+**`https://cloud.orest.com.mx`** con TLS, junto con el avisador y el panel.
 
 1. **`web`** — imagen `orest-cloud-web:<WEB_TAG>`, la página de estado en **`https://cloud.orest.com.mx`** (router
    `orest-cloud`, puerto **3004**: 3000–3003 y 5678 ya estaban tomados). Rol `orest_cloud_web`. **Sin el socket de

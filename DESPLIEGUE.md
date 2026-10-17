@@ -2,7 +2,11 @@
 
 > Runbook operativo. Lo sigue una persona que maneja el VPS. Acompaña a
 > `vps-infra.md` (el "qué/por qué"); esto es el "cómo, en orden".
-> **Estado: primer despliegue (infra aún no probada en un VPS real).**
+> **Estado: infra PROBADA en un VPS real.** Esta línea decía «primer despliegue (infra aún no probada en
+> un VPS real)», y contradecía de frente a este mismo documento: **el primer deploy real fue el
+> 2026-06-27** (la sección de lecciones de abajo se titula así), y `vps-infra.md` registra desde entonces
+> dos mediciones de `docker stats` tomadas en el VPS (7 y 10 oct 2026) y **los respaldos diarios hechos y
+> probados en el VPS desde el 13 de octubre de 2026**. Lo que sigue abajo es el runbook, no una apuesta.
 
 Datos de este despliegue:
 - **VPS (Hostinger, Ubuntu, Docker 29 preinstalado):** IP **real** del servidor =
