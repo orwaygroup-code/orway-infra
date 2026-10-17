@@ -239,24 +239,44 @@ instancia bajo carga real**.
 
 ### Techo de capacidad para ORest
 
-Cada instancia de ORest cuesta ~300 MB (Perico, su equivalente, mide 249 en reposo) más ~35 MB
-de Postgres por sus 5 conexiones: **~335 MB por restaurante**.
+**El techo es 5, decidido por Paul el 17 de octubre de 2026**, y el costo por instancia es su **límite
+declarado: 384M**. La cuenta está en `orest-cloud/docs/capacidad.md` y da **5.47 → 5** por suma de
+límites, con el host apartado: aunque todas las apps toquen su límite a la vez, nada muere. Lo medido en
+reposo da muchos más —una ORest recién creada mide 83–92 MB— pero el techo no se fija sobre lo que
+consume en reposo.
 
-| Escenario | Clientes de ORest |
-|---|---|
-| Construyendo la imagen **en el VPS** (como hoy) | **6** |
-| Construyendo fuera y subiendo la imagen | **12** |
-| Más allá | topan las conexiones de Postgres: 16 |
+> **Aquí había una tabla que decía 6 / 12 / 16 clientes, sobre «~335 MB por restaurante». Se borra, y vale
+> la pena decir por qué estuvo mal, porque el error no es el número.**
+>
+> Los tres defectos de esa cuenta están medidos en `capacidad.md`: **(1)** los ~335 MB salían de medir
+> **perico-pos**, no ORest —por eso el límite por instancia bajó de 768M a 384M el 10 de octubre—;
+> **(2)** la unidad estaba corrida, se restaban GiB de `free -h` contra MiB de los compose leídos como GB;
+> y **(3)** la cuenta era anterior a la mitad web de Cloud, que se lleva 640 MiB en cuatro servicios. Y el
+> «16» era el techo de **conexiones de Postgres**, que ya no es lo que manda: Cloud agrega tres pools de
+> Prisma y eso lo deja en **~13**, muy por encima de 5.
+>
+> **El error de método, que es lo que conviene guardar: este documento ya había refutado los ~335 MB DOS
+> PÁRRAFOS ARRIBA** —la sección del 10 de octubre lo dice con sus `docker stats`— **y seguía usando la
+> cifra aquí abajo.** Peor: la primera fila de la tabla decía «construyendo la imagen **en el VPS** (como
+> hoy)» **seis líneas antes** del párrafo que explica que construir ahí está prohibido y que las imágenes
+> se suben. Corregir un dato arriba no corrige el lugar donde alguien lo va a leer: quien busca «cuántos
+> clientes caben» aterriza en la tabla, no en la corrección.
 
 `next build` pide 2–4 GB, y por eso **las imágenes se construyen en local y se suben**
 (`docker save … | ssh … docker load`), nunca en el VPS. Con el swap puesto un pico ya degrada en vez de
-matar, pero construir ahí sigue estando prohibido: degradar a seis restaurantes a media comida no es un
+matar, pero construir ahí sigue estando prohibido: degradar a cinco restaurantes a media comida no es un
 resultado aceptable, solo uno menos malo.
 
-La cuenta completa de capacidad vive ahora en `orest-cloud/docs/capacidad.md`, con los tres criterios
-(límites: 3 · medido: 12 · conexiones: 16). La tabla de abajo conserva un escenario de «6» que **ya no
-aplica**: suponía construir la imagen en el VPS, y desde la ola C-2 el agente aprovisiona desde una
-imagen precargada.
+La cuenta completa de capacidad vive en `orest-cloud/docs/capacidad.md`, y **el criterio que manda es la
+suma de límites: 5**. Los otros dos solo sirven para saber que no aprietan —lo medido en reposo da mucho
+más, y las conexiones de Postgres quedan en ~13.
+
+> Aquí decía **«los tres criterios (límites: 3 · medido: 12 · conexiones: 16)»**, que son los números de
+> `capacidad.md` **antes de su propia corrección**, y remataba con que «la tabla de abajo conserva un
+> escenario de 6 que ya no aplica» — una tabla que estaba **arriba**, no abajo. **Lo que hay que notar no
+> es el desorden: un pase anterior SABÍA que esa tabla estaba mal y escribió una nota al lado en vez de
+> borrarla.** Una corrección que deja el dato falso en pie no es una corrección: es una segunda versión
+> conviviendo con la primera, y gana la que el lector encuentre antes.
 
 ### Deriva conocida
 
