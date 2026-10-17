@@ -1,0 +1,61 @@
+{
+  "name": "ORest Cloud · avisos a Telegram",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "orest-avisos",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "name": "Aviso de ORest Cloud",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -120,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "REEMPLAZAR_CON_TU_CHAT_ID",
+        "text": "=🔴 ORest Cloud — alta fallida\n\n{{ $json.body.slug }} · {{ $json.body.action }}\n{{ $json.body.reason }}\n\nLa instancia quedó en {{ $json.body.instanceState }}\nJob #{{ $json.body.jobId }} · terminó {{ $json.body.finishedAt }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "a1c0ffee-0002-4000-8000-000000000002",
+      "name": "Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        120,
+        0
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "REEMPLAZAR",
+          "name": "Telegram ORest"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Aviso de ORest Cloud": {
+      "main": [
+        [
+          {
+            "node": "Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "active": false
+}

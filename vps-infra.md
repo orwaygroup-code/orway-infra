@@ -62,6 +62,34 @@ VPS (Docker host)
 
 ## Reglas duras
 - **Backups automáticos** de todas las BDs (diarios, fuera del VPS). No negociable.
+- **Los avisos de ORest Cloud llegan a Telegram por n8n** (decidido el 16 de octubre, y **solo para
+  Orway**: para el cliente el canal es su propio panel, porque un dueño de restaurante en México no
+  tiene Telegram — tiene WhatsApp, y eso cuesta dinero y aprobación).
+  El flujo está versionado en **`apps/orest-cloud/n8n-avisos-telegram.json`**: se importa en n8n y solo
+  hay que ponerle la credencial del bot y el `chat_id`. Dos nodos.
+  **Lo que NO es obvio y por eso está escrito: el `responseMode` es `lastNode` a propósito.** El avisador
+  de Cloud marca un aviso como entregado **si n8n responde 2xx** (`lib/notices.ts`, `webhookPost`); si el
+  flujo contestara 200 antes de mandar el mensaje, un envío fallido se daría por entregado y **no se
+  reintenta nunca**. Con `lastNode`, el 200 sale solo si Telegram salió bien, y si no, la vuelta siguiente
+  lo reintenta.
+  **⚠ HAY DOS n8n EN ESTE VPS, y confundirlos cuesta una tarde** (16 oct 2026): el de **San Luca** y el
+  de **Orway**. El que sirve a ORest Cloud es al que resuelve el nombre `n8n` **dentro de la red `web`**,
+  que es exactamente lo que usa `ORESTCLOUD_NOTICE_URL`. Publicar el flujo en el otro deja el editor
+  contento y la ruta de producción en **404 para siempre**.
+  **Cómo saber en cuál estás parado, sin adivinar:** `healthz` dice si hay un n8n ahí, y la prueba del
+  webhook dice si es *ése*. Las dos se corren desde el contenedor que lo va a usar de verdad, nunca desde
+  el shell del host — en el host el nombre `n8n` no resuelve y curl devuelve `000`, que no es un error de
+  n8n sino de dónde se preguntó:
+  ```bash
+  docker exec orest-cloud-web-1 node -e "fetch('http://n8n:5678/healthz').then(async r=>console.log(r.status, await r.text()))"
+  ```
+  Un **200** con `healthz` y un **404** en `/webhook/orest-avisos` significa siempre lo mismo: el n8n
+  correcto está ahí, pero el flujo está publicado en otro lado.
+
+  Hoy ese canal lleva **solo altas fallidas** (`kind: "JOB_FAILED"`). El cobro fallido nace con C-7 y el
+  «dejó de reportar» con V-3; el campo `kind` existe para que entonces el mismo flujo los ramifique sin
+  tocar el avisador.
+
   **Destino decidido el 16 de octubre de 2026: Google Drive**, y con tres condiciones que no son
   opcionales porque son las que hacen que el respaldo sirva:
   1. **Cuenta de servicio con su propia carpeta, nunca el Drive personal.** La credencial vive en el VPS;
