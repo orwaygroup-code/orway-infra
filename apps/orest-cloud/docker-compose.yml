@@ -215,9 +215,18 @@ services:
   # Para que quede dicho, porque la auditoría lo afirmó mal el 14 oct y lo corrigió el 15: las comprobaciones
   # de cabeceras del panel **SÍ fallan cerrado** — si no viene `Sec-Fetch-Site` ni `Origin`, se niega
   # (panel/server.ts:71, probado). Lo que ninguna cabecera puede impedir es un falsificador deliberado: lo que
-  # pueda hablar HTTP en esta red puede fijar `Host: localhost` a mano. Suspender lleva además un vale de un
-  # solo uso que no depende de cabeceras; `RESUME` y `PROVISION` todavía no. De ahi que el `profiles` no sea
-  # opcional: acota la ventana a los minutos de uso.
+  # pueda hablar HTTP en esta red puede fijar `Host: localhost` a mano.
+  #
+  # Y UNA SEGUNDA CORRECCIÓN, del 17 oct, porque este comentario decía que suspender lleva «un vale de un solo
+  # uso que no depende de cabeceras; `RESUME` y `PROVISION` todavía no», como si faltara extenderlo: **el vale
+  # no detiene al falsificador de esta red en ninguna de las tres acciones.** El GET que lo emite no lleva
+  # guardia de origen y manda el vale en el cuerpo de la página, y el mismo origen limita a un NAVEGADOR, no a
+  # un cliente HTTP — n8n lee las respuestas que pide. El vale sirve contra otra cosa, real pero distinta: una
+  # página de otro origen abierta en el navegador de quien tiene el túnel. Está medido en
+  # orest-cloud/docs/panel.md §4.
+  #
+  # POR ESO EL `profiles` NO ES UN INTERINO MIENTRAS LLEGA UNA DEFENSA MEJOR: es la defensa. Un panel que no
+  # está corriendo no tiene superficie, y los minutos en que corre son los minutos en que alguien lo mira.
   panel:
     image: orest-cloud-web:${WEB_TAG:?falta WEB_TAG}
     pull_policy: never
