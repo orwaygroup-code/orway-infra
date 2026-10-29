@@ -64,10 +64,29 @@ cp "$ROOT/apps/orest/docker-compose.yml" "$DIR/docker-compose.yml"
 cat > "$DIR/.env" <<ENV
 CLIENT=$CLIENT
 DOMAIN=$DOMAIN
+IMAGE_TAG=$IMAGE_TAG
 DATABASE_URL=postgresql://$DBUSER:$DBPASS@postgres:5432/$DB?schema=public&connection_limit=5
 AUTH_SECRET=$(openssl rand -base64 48)
+# CIFRA los secretos guardados (credenciales de Mercado Pago, etc.). En prod, sellar o abrir un
+# secreto SIN esta llave LANZA (lib/secretBox.ts). No se regenera sin volver ilegible lo ya guardado.
+SECRETS_KEY=$(openssl rand -hex 32)
+# Plan de la instancia. Por defecto esencial (lib/plan.ts cae ahi si falta). EDITALO a profesional o
+# concierge segun lo vendido ANTES de entregar; si no, el cliente corre en el plan mas bajo.
+OREST_PLAN=esencial
 SETUP_CODE=$SETUP_CODE
-IMAGE_TAG=$IMAGE_TAG
+# -- Opcionales: habilitalos segun el plan (ver apps/orest/.env.example) -----------------------
+# IA (concierge, autoauditoria, transcripcion, vision). Llave de Orway, se factura aparte. Se propaga
+# desde el .env raiz del VPS si esta puesta ahi; si no, llenala a mano:
+OPENAI_API_KEY=${OPENAI_API_KEY:-}
+# Avisos push (caja, cocina, gerencia). Genera el par: npx web-push generate-vapid-keys
+# VAPID_PUBLIC_KEY=
+# VAPID_PRIVATE_KEY=
+# VAPID_SUBJECT=mailto:soporte@orest.com.mx
+# Resumen diario por WhatsApp (solo Concierge):
+# OREST_AUDIT_WHATSAPP=
+# Correo de solicitudes ARCO (privacidad):
+# RESEND_API_KEY=
+# MAIL_FROM=
 ENV
 chmod 600 "$DIR/.env"
 
@@ -84,8 +103,12 @@ echo "  SETUP_CODE = $SETUP_CODE"
 echo "  Entrégaselo a quien pagó. Con él crea al primer MANAGER en"
 echo "  https://$DOMAIN/primer-uso  —  deja de servir en cuanto exista cualquier Staff."
 echo
-echo "  Los secretos quedaron en $DIR/.env (chmod 600). GUÁRDALOS: el AUTH_SECRET"
-echo "  no se puede regenerar sin tirar todas las sesiones."
+echo "  OJO PLAN: el .env quedó con OREST_PLAN=esencial. Si vendiste Profesional o Concierge,"
+echo "  edítalo en $DIR/.env y reinicia el contenedor ANTES de entregar."
+echo
+echo "  Los secretos quedaron en $DIR/.env (chmod 600). GUÁRDALOS: AUTH_SECRET no se regenera"
+echo "  sin tirar las sesiones, y SECRETS_KEY no se regenera sin volver ilegibles las credenciales"
+echo "  ya guardadas (Mercado Pago, etc.). Según el plan, completa los opcionales comentados ahí."
 echo
 echo "  Antes de abrirlo al cliente, comprueba:"
 echo "    docker compose -p orest-$CLIENT ps          # debe decir (healthy)"
