@@ -1,0 +1,94 @@
+# ORest — LANDING del ápice. `orest.com.mx` pelado = el PUNTO DE VENTA (la página comercial). Es la
+# única pieza pública en el ápice; los subdominios (cloud., y cada restaurante `<cliente>.orest.com.mx`)
+# los cubre el comodín `A *` del DNS.
+#
+# ⚠ EL COMODÍN NO CUBRE EL ÁPICE. `*.orest.com.mx` matchea subdominios de UNA etiqueta, nunca el
+# `orest.com.mx` pelado. El ápice necesita su PROPIO registro `A @ → <IP del VPS>` (ver README.md). Sin
+# él, Traefik no recibe tráfico aquí, ACME no puede emitir el certificado, y la landing queda en 404/sin
+# TLS sin un error claro. `www` SÍ lo resuelve el comodín; abajo solo lo redirigimos al ápice.
+#
+#   docker compose -f apps/orest-landing/docker-compose.yml up -d
+#
+# POR QUÉ NO sigue el patrón de imagen-construida de ORest/Cloud (`docker save | ssh load`, `pull_policy:
+# never`): eso existe porque ORest y Cloud son builds pesados de Next con secretos y con riesgo de
+# colisión de nombre de imagen. Esto es UN HTML estático. Se sirve con `nginx` ESTÁNDAR (imagen base
+# pública, igual que `node:22-slim` lo es para ORest) y se BIND-MONTEA el HTML desde este repo, que en el
+# VPS ya está clonado en `/opt/orway-infra` (INFRA_DIR). No hay código de app ni secretos dentro del
+# contenedor, así que no corre el riesgo que obliga a `pull_policy: never` en las apps.
+#
+# ACTUALIZAR LA COPIA (cambiar el texto, un precio, lo que sea): editas `site/index.html` en el repo,
+# `git pull` en `/opt/orway-infra`, y `docker compose -f apps/orest-landing/docker-compose.yml restart`.
+# Sin build, sin save|load. (nginx cachea el archivo abierto ~unos segundos; `restart` lo fuerza.)
+
+name: orest-landing
+
+networks:
+  web:
+    external: true
+
+services:
+  web:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    networks: [web]
+
+    # El contenedor no necesita escribir en su raíz: el sitio y la conf entran de solo-lectura, y lo que
+    # nginx sí escribe (pid, cache, temporales) va a tmpfs. Endurece sin costo.
+    read_only: true
+    volumes:
+      - ./site:/usr/share/nginx/html:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    tmpfs:
+      - /tmp:size=8m
+      - /var/cache/nginx:size=16m
+      - /var/run:size=1m
+
+    # Una landing estática no pesa nada. 64M es holgado para nginx:alpine (mide ~6-10 MB en reposo); el
+    # límite existe para que no cuente en el techo de capacidad del VPS compartido (vps-infra.md).
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 64M
+        reservations:
+          memory: 16M
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    security_opt:
+      - no-new-privileges:true
+
+    # nginx:alpine no trae curl; el wget de busybox sí. /healthz lo sirve nginx.conf con un 200 plano.
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+    labels:
+      - traefik.enable=true
+
+      # ── Ápice: sirve la landing ──────────────────────────────────────────────
+      - traefik.http.routers.orest-landing.rule=Host(`orest.com.mx`)
+      - traefik.http.routers.orest-landing.entrypoints=websecure
+      - traefik.http.routers.orest-landing.tls.certresolver=le
+      - traefik.http.routers.orest-landing.service=orest-landing
+      - traefik.http.services.orest-landing.loadbalancer.server.port=80
+
+      # ── www → ápice (301 permanente) ─────────────────────────────────────────
+      # El router necesita un `service` aunque el middleware de redirección conteste antes de llegar a él
+      # (Traefik lo exige); apunta al mismo, es inofensivo. El `$${1}` lleva doble `$` para que compose no
+      # lo interpole: a Traefik le llega `${1}`.
+      - traefik.http.routers.orest-landing-www.rule=Host(`www.orest.com.mx`)
+      - traefik.http.routers.orest-landing-www.entrypoints=websecure
+      - traefik.http.routers.orest-landing-www.tls.certresolver=le
+      - traefik.http.routers.orest-landing-www.service=orest-landing
+      - traefik.http.routers.orest-landing-www.middlewares=orest-landing-wwwredir
+      - traefik.http.middlewares.orest-landing-wwwredir.redirectregex.regex=^https://www\.orest\.com\.mx/(.*)
+      - traefik.http.middlewares.orest-landing-wwwredir.redirectregex.replacement=https://orest.com.mx/$${1}
+      - traefik.http.middlewares.orest-landing-wwwredir.redirectregex.permanent=true
