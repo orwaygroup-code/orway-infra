@@ -35,6 +35,8 @@
 #   ORESTCLOUD_PUBLIC_URL=https://cloud.orest.com.mx
 #   ORESTCLOUD_NOTICE_URL=http://n8n:5678/webhook/orest-avisos
 #   ORESTCLOUD_MAX_INSTANCES=           (el techo: LO DECIDE PAUL, orest-cloud/docs/capacidad.md. Vacío = no se vende)
+#   MP_ACCESS_TOKEN=                    (Mercado Pago, cuenta de Orway: PRUEBA para sandbox, PRODUCCIÓN al cobrar)
+#   MP_WEBHOOK_SECRET=                  (lo genera MP al configurar el webhook; NO es el token ni la Public Key)
 #
 # Memoria (orest-cloud/docs/capacidad.md): los tres servicios llevan límite. La suma de límites es lo que sostiene el
 # techo de capacidad; un servicio sin límite lo vuelve falso.
@@ -117,6 +119,14 @@ services:
       # correcto de cara al cliente — y por eso mismo el despliegue no se puede dar cuenta solo.
       # El `notifier` NO lo necesita: usa la misma imagen pero no sirve /entrar ni importa lib/sesion.
       ORESTCLOUD_SESSION_SECRET: ${ORESTCLOUD_SESSION_SECRET:?falta ORESTCLOUD_SESSION_SECRET}
+      # MERCADO PAGO (ola de pagos). El Access Token de la cuenta de ORWAY (secreto; de PRUEBA para el
+      # sandbox, de PRODUCCIÓN al cobrar de verdad) con el que la web crea las suscripciones; y el secreto
+      # de firma del webhook, que GENERA MP al configurar la notificación (NO es el token ni la Public Key).
+      # La Public Key NO va aquí: el flujo de enlace de pago no tokeniza la tarjeta en nuestro frontend.
+      # Opcionales (`:-`): la web arranca sin ellos (status y /cuenta siguen sirviendo); crear un cobro
+      # (sin token) y validar un webhook (sin secreto) fallan CERRADO hasta que se pongan.
+      MP_ACCESS_TOKEN: ${MP_ACCESS_TOKEN:-}
+      MP_WEBHOOK_SECRET: ${MP_WEBHOOK_SECRET:-}
     # Medido en local: 58 MiB después de 40 peticiones (ola C-2c). ORest, el mismo Next con mucho más adentro, mide
     # 83–92 MB recién creado y tiene 384M.
     deploy:
