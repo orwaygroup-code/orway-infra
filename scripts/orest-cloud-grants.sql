@@ -76,3 +76,24 @@ GRANT SELECT ON "Cuenta" TO orest_cloud_web;
 -- Sin este permiso el panel NO se cae: dice que no sabe si el agente está vivo. Pero entonces el único aviso
 -- que hay antes de suspender a un cliente deja de existir, así que ponlo.
 GRANT SELECT ("id", "holder", "expiresAt") ON "AgentLease" TO orest_cloud_web;
+
+-- `Suscripcion` (ola de pagos): la suscripción que Orway le cobra al restaurante por Mercado Pago. A
+-- diferencia de `Cuenta` —cuyo único escritor es `tooling/cuenta.ts`, que corre como el dueño—, aquí los
+-- escritores son código de la mitad WEB y usan ESTE rol: `contratar` (lib/contratar.ts) INSERTA la sub en
+-- PENDIENTE, el webhook (lib/suscripcionWebhook.ts) la ACTUALIZA al releer el estado en MP, y `panelFor`
+-- (lib/cuenta.ts, el bloque «Tu pago» de /cuenta) la LEE. Por eso van los tres, y la secuencia con el INSERT.
+--
+-- SELECT no es opcional ni aunque un día nadie escriba: `/cuenta` lo corre en cada carga y el webhook hace
+-- `findUnique` antes que nada; sin él los dos dan `permission denied for table "Suscripcion"` (el 404→500
+-- que, en /cuenta, le toca a cualquiera que entre). Los triggers (guard, never_delete) corren con el rol de
+-- quien dispara pero no tocan otra tabla, así que no piden más; el Job que pide el webhook lo cubre el
+-- `SELECT, INSERT ON "Job"` de arriba.
+--
+-- El AGENTE no entra: `agent/`, `notifier/` y `panel/` no mencionan `Suscripcion` (comprobado por búsqueda).
+-- Lee `plan` y `claimHash` de `Instance` con su `SELECT` de tabla, que ya cubre columnas nuevas.
+--
+-- PENDIENTE para cuando se cablee la suspensión por impago (lib/impago.ts, hoy sin llamador): su llamador
+-- necesita SELECT `Suscripcion` + INSERT `Job`. Si corre como `orest_cloud_web`, ya queda cubierto; si es un
+-- rol nuevo (un cron), se le agregan los permisos aquí.
+GRANT SELECT, INSERT, UPDATE ON "Suscripcion" TO orest_cloud_web;
+GRANT USAGE ON SEQUENCE "Suscripcion_id_seq" TO orest_cloud_web;
